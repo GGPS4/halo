@@ -19,12 +19,12 @@ ring of bottles, under a floating light ring that pours the drink and shows its 
 | Element | Size | Material / finish |
 |---|---|---|
 | Base | Ø380 × 70 mm, 6 mm fillet top edge | PETG/ASA print in 4 sectors, matte black |
-| Bottle ring | 9 slots at 40° on Ø300; front slot left open as the glass doorway, 8 bottles | Bottle pads: walnut-PLA or real walnut veneer discs Ø100 |
-| Glass stage | Ø110 platform over a 1 kg load cell | Frosted acrylic diffuser over a 24-LED ring |
-| Spine | Hollow 40 × 60 mm section, rises from the back (r = 75 mm) to 260 mm and curves forward | Matte black |
-| Halo ring | Ø200 OD / Ø170 ID × 14 mm, centered over the glass at 230 mm | Black ring with a frosted inner light strip |
+| Bottle ring | 9 slots at 40° on Ø280; front slot left open as the glass doorway, 8 bottles | Bottle pads: walnut-PLA discs Ø92 × 6 |
+| Glass stage | Ø100 × 6 frosted acrylic disc on a 1 kg load cell | Lit from below by a 24-LED ring |
+| Spine | 36 × 40 mm section behind the stage (y 55–95), base top to 430 mm, R10 corners | Matte black |
+| Halo ring | Ø190 OD / Ø166 ID × 14 mm at 260 mm, 3 spokes to the hub | Black ring with a frosted inner light strip |
 | Nozzle hub | Ø36 hub, 8 stainless 3 mm tubes converging to a single point | Stainless + black |
-| Display | 5" round 1080×1080 touch panel in a Ø150 bezel on the spine head | Black bezel |
+| Display | 5" round 1080×1080 touch panel in a Ø150 bezel, center ~455 mm up, tilted back 20° | Black bezel |
 
 ## What is new compared with timed-pump cocktail makers
 
@@ -63,3 +63,7 @@ ring of bottles, under a floating light ring that pours the drink and shows its 
 
 The LED ring is driven over SPI because the PWM-based WS2812 libraries don't run on the
 Pi 5's RP1 chip.
+
+The Fusion model (`cad/build_halo.py`) is the source of truth for these dimensions. Run it in
+Fusion to rebuild the full assembly; standard hardware (M3 screws 91290A115, heat-set inserts
+94180A331) comes from McMaster-Carr.
