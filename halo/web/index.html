@@ -227,6 +227,8 @@ pre{background:var(--glass-3);padding:14px;border-radius:var(--r-sm);overflow:au
   padding:12px 18px;border-radius:999px;font-weight:600;z-index:50;transition:all .2s;pointer-events:none;max-width:90vw}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .toast.bad{background:var(--warn)}
+.toast.show{pointer-events:auto}
+.toast .undo{margin-left:14px;background:none;border:0;padding:0;color:inherit;font:inherit;font-weight:700;text-decoration:underline;cursor:pointer}
 @media (max-width:820px){.toast{bottom:96px}}
 .empty{padding:34px;border-radius:var(--r-lg);background:var(--glass-2);text-align:center}
 .empty p{color:var(--mist);margin:6px auto 18px;max-width:42ch}
@@ -283,6 +285,20 @@ async function api(path, opts={}){
 }
 const toast = (msg, bad=false) => { const t=$("#toast"); t.textContent=msg; t.className="toast show"+(bad?" bad":"");
   clearTimeout(toast.t); toast.t=setTimeout(()=>t.className="toast",2600); };
+/* Feature 10: every change to bottles, drinks and settings can be undone for 10 seconds */
+const recipeBody = r => ({name:r.name, description:r.description, glass:r.glass, garnish:r.garnish, color:r.color,
+  ingredients:r.ingredients.map(i=>({bottle:i.bottle, parts:i.parts})), tags:r.tags||[], favorite:!!r.favorite, created_by:r.created_by});
+const bottleBody = b => ({name:b.name, abv:b.abv, density:b.density, color:b.color, capacity_ml:b.capacity_ml, remaining_ml:b.remaining_ml});
+function toastUndo(msg, undo){
+  const t = $("#toast"); t.className = "toast show";
+  t.innerHTML = `${esc(msg)}<button class="undo" type="button">Undo</button>`;
+  t.querySelector(".undo").onclick = async () => { t.className = "toast"; await act(undo, "Undone"); };
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.className = "toast", 10000);
+}
+async function actUndo(fn, ok, undo){
+  try{ const r = await fn(); await load(); toastUndo(ok, undo); return r || true; }
+  catch(e){ toast(e.message, true); }
+}
 async function act(fn, ok){ try{ const r = await fn(); if(ok) toast(ok); await load(); return r; } catch(e){ toast(e.message, true); } }
 
 /* ------------------------------------------------------------------ nav */
@@ -781,7 +797,8 @@ document.addEventListener("change", async e => {
   const el = e.target;
   if(el.dataset.pref){
     let v = el.value === "" ? null : +el.value; if(v!==null && el.dataset.scale) v = v*+el.dataset.scale;
-    await act(()=>api("prefs",{method:"PUT",body:{[el.dataset.pref]:v}}), "Saved");
+    const k = el.dataset.pref, prev = S.state.prefs[k];
+    await actUndo(()=>api("prefs",{method:"PUT",body:{[k]:v}}), "Saved", ()=>api("prefs",{method:"PUT",body:{[k]:prev}}));
   }
   if(el.id==="imp" && el.files[0]){
     try{ const items = JSON.parse(await el.files[0].text()); const r = await api("recipes/import",{method:"POST",body:items});
@@ -821,11 +838,13 @@ document.addEventListener("click", async e => {
       S.thinking = true; render();
       try{ S.result = await api("bartender",{method:"POST",body:{request:req}}); S.lastReq = req; S.thinking = false; location.hash = "bartender"; }
       catch(err){ S.thinking = false; toast(err.message, true); render(); } break; }
-    case "refill": act(()=>api(`bottles/${slot}/refill`,{method:"POST"}), "Marked as refilled"); break;
+    case "refill": { const prev = bottleBody(bottles()[slot-1]);
+      actUndo(()=>api(`bottles/${slot}/refill`,{method:"POST"}), "Marked as refilled", ()=>api(`bottles/${slot}`,{method:"PUT",body:prev})); break; }
     case "reset-pump": act(()=>api(`pumps/${slot}/reset`,{method:"POST"}), `Pump ${slot} will learn again from the next pour`); S.pumps=null; break;
     case "slot":
       if(S.swapFrom && S.swapFrom!==slot){ const from=S.swapFrom; S.swapFrom=null;
-        await act(()=>api("bottles/swap",{method:"POST",body:{a:from,b:slot}}), `Swapped slots ${from} and ${slot}`); break; }
+        const swap = ()=>api("bottles/swap",{method:"POST",body:{a:from,b:slot}});
+        await actUndo(swap, `Swapped slots ${from} and ${slot}`, swap); break; }
       S.selSlot = slot; render(); bottleSheet(slot); break;
     case "swap-mode": S.swapFrom = S.swapFrom ? null : (S.selSlot || 1); if(S.swapFrom) toast(`Swapping from slot ${S.swapFrom}. Tap another slot.`); render(); break;
     case "save-slot": {
@@ -834,8 +853,12 @@ document.addEventListener("click", async e => {
                     capacity_ml:cap, remaining_ml: cap*(+$("#brem").value)/100};
       const old = bottles()[slot-1];
       if(body.name && body.name.toLowerCase()!==old.name.toLowerCase() && +$("#brem").value===Math.round(old.level*100)) body.remaining_ml = cap;
-      await act(()=>api(`bottles/${slot}`,{method:"PUT",body}), body.name?`Slot ${slot} is ${body.name}`:`Slot ${slot} cleared`); closeSheet(); break; }
-    case "clear-slot": await act(()=>api(`bottles/${slot}`,{method:"PUT",body:{name:"",abv:0,density:1}}), `Slot ${slot} emptied`); closeSheet(); break;
+      const prev = bottleBody(old);
+      await actUndo(()=>api(`bottles/${slot}`,{method:"PUT",body}), body.name?`Slot ${slot} is ${body.name}`:`Slot ${slot} cleared`,
+        ()=>api(`bottles/${slot}`,{method:"PUT",body:prev})); closeSheet(); break; }
+    case "clear-slot": { const prev = bottleBody(bottles()[slot-1]);
+      await actUndo(()=>api(`bottles/${slot}`,{method:"PUT",body:{name:"",abv:0,density:1}}), `Slot ${slot} emptied`,
+        ()=>api(`bottles/${slot}`,{method:"PUT",body:prev})); closeSheet(); break; }
     case "new-drink": drinkSheet(null); break;
     case "edit-drink": drinkSheet(S.state.recipes.find(r=>r.name===name)); break;
     case "save-drink": {
@@ -847,9 +870,15 @@ document.addEventListener("click", async e => {
         created_by:S.state.recipes.find(r=>r.name===t.dataset.replace)?.created_by||"you"};
       if(!body.name){ toast("Give the drink a name", true); $("#dn").focus(); break; }
       if(!rows.length){ toast("Add at least one ingredient", true); break; }
-      const ok = await act(()=>api("recipes",{method:"POST",body}), t.dataset.replace?"Drink saved":"Drink added"); if(ok) closeSheet(); break; }
-    case "del-drink": if(confirm(`Delete ${name}?`)) act(()=>api("recipes/"+encodeURIComponent(name),{method:"DELETE"}), "Drink deleted"); break;
-    case "fav": act(()=>api(`recipes/${encodeURIComponent(name)}/favorite`,{method:"POST"})); break;
+      const before = S.state.recipes.find(r=>r.name===t.dataset.replace);
+      const undo = before ? ()=>api("recipes",{method:"POST",body:{...recipeBody(before), replace:body.name}})
+                          : ()=>api("recipes/"+encodeURIComponent(body.name),{method:"DELETE"});
+      const ok = await actUndo(()=>api("recipes",{method:"POST",body}), before?"Drink saved":"Drink added", undo); if(ok) closeSheet(); break; }
+    case "del-drink": { const before = S.state.recipes.find(r=>r.name===name); if(!before) break;
+      actUndo(()=>api("recipes/"+encodeURIComponent(name),{method:"DELETE"}), `${name} deleted`, ()=>api("recipes",{method:"POST",body:recipeBody(before)})); break; }
+    case "fav": { const fav = ()=>api(`recipes/${encodeURIComponent(name)}/favorite`,{method:"POST"});
+      const was = S.state.recipes.find(r=>r.name===name)?.favorite;
+      actUndo(fav, was ? `Removed ${name} from favorites` : `${name} is a favorite`, fav); break; }
     case "pour-sheet": pourSheet(name); break;
     case "pour": {
       const ok = await act(()=>api("pour",{method:"POST",body:{drink:name,size:S.pour.size,strength:S.pour.strength,by:"phone"}}), "Place a cup of ice on the halo");
@@ -868,9 +897,12 @@ document.addEventListener("click", async e => {
       await act(()=>api("party",{method:"POST",body:S.partyDraft}), "Party menu is on"); S.thinking=false; S.filter="all"; render(); break; }
     case "pick": S.partyPick.has(name) ? S.partyPick.delete(name) : S.partyPick.add(name); render(); break;
     case "pick-go": await act(()=>api("party",{method:"POST",body:{theme:$("#theme").value.trim()||"House party",drinks:[...S.partyPick]}}), "Party menu is on"); S.partyPick.clear(); render(); break;
-    case "end-party": act(()=>api("party",{method:"DELETE"}), "Party ended"); break;
-    case "pref-toggle": act(()=>api("prefs",{method:"PUT",body:{[t.dataset.k]:t.getAttribute("aria-checked")!=="true"}})); break;
-    case "pref-set": act(()=>api("prefs",{method:"PUT",body:{[t.dataset.k]:t.dataset.v}})); break;
+    case "end-party": { const p = {...S.state.party};
+      actUndo(()=>api("party",{method:"DELETE"}), "Party ended", ()=>api("party",{method:"POST",body:{theme:p.theme, drinks:p.drinks}})); break; }
+    case "pref-toggle": { const k = t.dataset.k, prev = S.state.prefs[k];
+      actUndo(()=>api("prefs",{method:"PUT",body:{[k]:t.getAttribute("aria-checked")!=="true"}}), "Saved", ()=>api("prefs",{method:"PUT",body:{[k]:prev}})); break; }
+    case "pref-set": { const k = t.dataset.k, prev = S.state.prefs[k];
+      actUndo(()=>api("prefs",{method:"PUT",body:{[k]:t.dataset.v}}), "Saved", ()=>api("prefs",{method:"PUT",body:{[k]:prev}})); break; }
     case "export": {
       const data = await api("recipes/export");
       const url = URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));

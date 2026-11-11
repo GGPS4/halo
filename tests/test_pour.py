@@ -335,3 +335,35 @@ def test_guard_catches_a_slow_leak_after_the_drink(rig):
     scale.flow = 0.0
     assert engine.progress.state == State.ERROR and "kept coming" in engine.progress.message
     assert not engine.waiting_pickup
+
+
+def test_pumps_start_softly_and_stop_at_once():
+    """Feature 12: a pump eases up to speed; off() is immediate and cancels the ramp."""
+    scale = MockScale()
+    pumps = MockPumps(scale, flow_g_per_s=10)
+    pumps.on(1, 1.0)
+    assert pumps.running[1] == pytest.approx(0.3)
+    time.sleep(0.6)
+    assert pumps.running[1] == pytest.approx(1.0)
+    ramp = pumps.speed_log
+    assert ramp == sorted(ramp) and len(ramp) >= 6                    # climbed in steps
+    pumps.on(1, 0.5)                                                  # slow zone: applies at once
+    assert pumps.running[1] == pytest.approx(0.5)
+    pumps.off(1)
+    pumps.on(2, 1.0)
+    pumps.off(2)                                                      # off mid-ramp
+    time.sleep(0.5)
+    assert pumps.running == {}
+
+
+def test_thick_liquids_slow_earlier_and_gentler(rig):
+    """Feature 13 (thick liquids)."""
+    engine, scale, pumps, inv = rig
+    thin_zone, thin_lo = engine.profile(1, "Gin")
+    syrup_zone, syrup_lo = engine.profile(3, "Simple Syrup")          # density 1.3
+    assert syrup_zone > thin_zone * 1.5 and syrup_lo < thin_lo
+    for _ in range(3):                                                # a pump that keeps missing
+        engine.learning.record(1, "Gin", 1.6, 2.0, 2.5)
+    assert engine.profile(1, "Gin")[0] > thin_zone
+    assert engine.speed_for(syrup_zone + 1, (syrup_zone, syrup_lo)) == 1.0
+    assert engine.speed_for(0, (syrup_zone, syrup_lo)) == pytest.approx(syrup_lo)

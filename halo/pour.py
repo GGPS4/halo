@@ -8,6 +8,7 @@ Features layered on top of the basic weigh-and-stop loop:
   1  each pump learns its flow and how much lands after it stops (config.PumpLearning)
   3  a finished drink keeps the ring lit in its color until the cup is lifted, and the next
      pour won't start into a drink that's still sitting there
+  13 (thick liquids) syrups and slow pumps start slowing earlier and finish gentler; see profile()
   13 a weight guard stops the pump if weight jumps faster than any pump could pour, if the
      cup gets lighter mid-pour (tipped or spilled), or if a pump runs well past its target
 
@@ -293,13 +294,37 @@ class PourEngine:
             self.halo.breathe(time.monotonic())
             time.sleep(TICK)
 
-    def speed_for(self, remaining_g: float) -> float:
+    def speed_for(self, remaining_g: float, profile: tuple[float, float] | None = None) -> float:
         """Feature 34: full speed until the slow zone, then ease down to min_speed."""
-        zone = self.cfg.get("slow_zone_g", 0) or 0
+        zone, lo = profile or self.profile()
         if zone <= 0 or remaining_g >= zone:
             return 1.0
-        lo = self.cfg.get("min_speed", 0.35)
         return lo + (1.0 - lo) * max(0.0, remaining_g) / zone
+
+    def profile(self, slot: int = 0, bottle: str = "") -> tuple[float, float]:
+        """Feature 13 (thick liquids): (slow zone in grams, slowest speed) for this pump.
+
+        Syrups and heavy liqueurs keep moving after the pump slows and drip longer, so they
+        start slowing earlier and finish gentler. "Thick" comes from the bottle's density
+        (1.15 g/ml and up) and, once the pump has poured a few times, from what it learned:
+        a pump that runs much slower than its full-speed baseline for thin liquids, or that
+        keeps missing its target, gets a longer, gentler finish too.
+        """
+        zone = float(self.cfg.get("slow_zone_g", 0) or 0)
+        lo = float(self.cfg.get("min_speed", 0.35))
+        b = self.inv.find(bottle) if bottle else None
+        thick = 0.0                                          # 0 = water-like .. 1 = syrup
+        if b and b.density >= 1.15:
+            thick = min(1.0, (b.density - 1.15) / 0.15 + 0.5)
+        e = self.learning.entry(slot, bottle) if (self.learning and bottle) else None
+        if e and e.get("n", 0) >= 2:
+            if e.get("flow_gps") and e["flow_gps"] < 0.8 * self.cfg.get("thin_flow_gps", 1.6):
+                thick = max(thick, 0.6)
+            if e.get("avg_error_g", 0) > 1.0:                # still landing off target: finish slower
+                zone *= min(1.6, 1.0 + (e["avg_error_g"] - 1.0) * 0.4)
+        zone *= 1.0 + 0.75 * thick
+        lo = max(0.2, lo * (1.0 - 0.3 * thick))
+        return zone, lo
 
     def _pour_one(self, slot, target, done_before, total, bottle="") -> float:
         cfg = self.cfg
@@ -317,6 +342,7 @@ class PourEngine:
         if learned and learned.get("flow_gps"):
             surge = max(surge, 4.0 * learned["flow_gps"])
         window = collections.deque()        # (time, grams) over the last ~0.4 s
+        profile = self.profile(slot, bottle)
         got = 0.0
         self.pumps.on(slot, speed)
         try:
@@ -345,7 +371,7 @@ class PourEngine:
                     raise PourError(f"Slot {slot} stopped flowing — the bottle may be empty")
                 if now - start > cfg["max_seconds_per_ingredient"]:
                     raise PourError(f"Slot {slot} took too long")
-                new_speed = self.speed_for(stop_at - got)
+                new_speed = self.speed_for(stop_at - got, profile)
                 if abs(new_speed - speed) > 0.04:
                     speed = new_speed
                     self.pumps.on(slot, speed)

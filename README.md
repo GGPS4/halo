@@ -76,7 +76,8 @@ app icon). From there you can:
 - change ring brightness, ambient mode, drink sizes, low-bottle warnings and voice orders
 - download and import your drink library
 
-The full build (parts, wiring, printing, assembly) is in the Halo build guide. The design
+The full build (parts, wiring, printing, assembly) is in the Halo build guide. Wiring at a
+glance: [`docs/img/wiring.png`](docs/img/wiring.png). The design
 spec is in [`docs/design.md`](docs/design.md) and the driver board in [`pcb/`](pcb/).
 
 ## Hardware

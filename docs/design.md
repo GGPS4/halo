@@ -107,8 +107,9 @@ bottle, through the top plate, to its pump, then up the drum wall and along the 
 | 5 V / 3.3 V / GND | — | 2,4 / 1 / 6,9,14,20,25,30,34,39 |
 
 The 52-pixel gate strip is chained to the ring's DOUT, so both run from the one data line
-(`hardware.gate_led_count` in settings; set it to 0 if the strip isn't fitted). Feed the
-strip's 5 V straight from the buck converter rather than through the Pi.
+(`hardware.gate_led_count` in settings; set it to 0 if the strip isn't fitted). The strip
+gets its own 5 V from a second converter (12 V to 5 V 3 A) so it never loads the Pi's 5 V
+rail. Full wiring: [`img/wiring.png`](img/wiring.png).
 
 The LED ring is driven over SPI because the PWM-based WS2812 libraries don't run on the
 Pi 5's RP1 chip.

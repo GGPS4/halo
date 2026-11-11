@@ -25,6 +25,8 @@ DEFAULTS = {
         "hx711_dt": 4,
         "hx711_sck": 17,
         "scale_factor": 420.0,   # raw counts per gram, set by `python -m halo.calibrate`
+        "pwm_hz": 10000.0,        # pump PWM; was 200 Hz (an audible buzz). lgpio's software PWM tops out at 10 kHz
+        "soft_start_s": 0.4,      # pumps ease up to speed over this long (0 = off)
         "led_count": 24,
         "gate_led_count": 52,     # 60/m WS2812B strip on the visible arc inside the gate ring; 0 if not fitted
         "led_brightness": 0.4,

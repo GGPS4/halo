@@ -19,29 +19,92 @@ def hex_rgb(h: str, fallback=(240, 170, 80)):
 
 
 # ---------------------------------------------------------------- pumps
-class Pumps:
-    """PWM on each MOSFET gate, so pumps can slow down near the target (feature 34)."""
+class SoftStart:
+    """Feature 12 (quieter pumps): a pump that was off eases up to speed over ramp_s instead
+    of slamming on. The clunk of a peristaltic pump starting is most of its noise, and a gentle
+    start also splashes less on the ice. Speed changes while running (the slow zone near the
+    target) apply at once, and off() is always immediate."""
 
-    def __init__(self, pins: list[int]):
-        from gpiozero import PWMOutputDevice  # Pi only
+    ramp_s = 0.4
+    ramp_from = 0.3
+    _steps = 8
 
-        self._outs = [PWMOutputDevice(p, initial_value=0, frequency=200) for p in pins]
+    def _soft_init(self):
+        self._ramp_lock = threading.Lock()
+        self._ramps: dict[int, object] = {}
+        self._levels: dict[int, float] = {}
+
+    def _set(self, slot: int, value: float) -> None:      # subclasses drive the hardware
+        raise NotImplementedError
+
+    def _apply(self, slot: int, value: float) -> None:
+        self._levels[slot] = value
+        self._set(slot, value)
 
     def on(self, slot: int, speed: float = 1.0) -> None:
-        self._outs[slot - 1].value = max(0.0, min(1.0, speed))
+        speed = max(0.0, min(1.0, speed))
+        token = object()
+        with self._ramp_lock:
+            self._ramps[slot] = token
+            running = self._levels.get(slot, 0.0) > 0
+        if running or speed <= self.ramp_from or self.ramp_s <= 0:
+            self._apply(slot, speed)
+            return
+        self._apply(slot, self.ramp_from)
+
+        def ramp():
+            for i in range(1, self._steps + 1):
+                time.sleep(self.ramp_s / self._steps)
+                with self._ramp_lock:
+                    if self._ramps.get(slot) is not token:
+                        return                        # turned off or re-set meanwhile
+                    self._apply(slot, self.ramp_from + (speed - self.ramp_from) * i / self._steps)
+
+        threading.Thread(target=ramp, daemon=True).start()
 
     def off(self, slot: int) -> None:
-        self._outs[slot - 1].value = 0
+        with self._ramp_lock:
+            self._ramps.pop(slot, None)
+            self._apply(slot, 0.0)
 
     def all_off(self) -> None:
-        for o in self._outs:
+        with self._ramp_lock:
+            self._ramps.clear()
+            for slot in list(self._levels):
+                self._apply(slot, 0.0)
+
+
+class Pumps(SoftStart):
+    """PWM on each MOSFET gate, so pumps can slow down near the target (feature 34) and start
+    softly (feature 12). The PWM runs at pwm_hz: well above the 200 Hz buzz of the first
+    version. The Pi 5 only has hardware PWM on GPIO 12/13/18/19, so these are software PWM
+    channels from lgpio, which tops out at 10 kHz; a board revision with a dedicated PWM
+    driver would take it to an inaudible 25 kHz."""
+
+    def __init__(self, pins: list[int], pwm_hz: float = 10000.0, ramp_s: float = 0.4):
+        from gpiozero import PWMOutputDevice  # Pi only
+
+        self._soft_init()
+        self.ramp_s = ramp_s
+        try:
+            self._outs = [PWMOutputDevice(p, initial_value=0, frequency=pwm_hz) for p in pins]
+        except Exception:                               # older pin factories cap the frequency
+            self._outs = [PWMOutputDevice(p, initial_value=0, frequency=1000) for p in pins]
+
+    def _set(self, slot: int, value: float) -> None:
+        self._outs[slot - 1].value = value
+
+    def all_off(self) -> None:
+        super().all_off()
+        for o in self._outs:                            # belt and braces: every channel, even unused
             o.value = 0
 
 
-class MockPumps:
+class MockPumps(SoftStart):
     """Pretends pumps move liquid onto a MockScale; flow follows the PWM speed."""
 
     def __init__(self, scale: "MockScale", flow_g_per_s: float = 1.6, drip_g: float = 0.0):
+        self._soft_init()
         self.scale = scale
         self.flow = flow_g_per_s
         self.drip_g = drip_g          # liquid still in the tube that lands after the pump stops
@@ -53,22 +116,27 @@ class MockPumps:
     def _update(self):
         self.scale.flow = sum(self.flow * s for slot, s in self.running.items() if slot not in self.empty_slots)
 
-    def on(self, slot: int, speed: float = 1.0) -> None:
-        self.running[slot] = speed
-        self.speed_log.append(speed)
+    def _set(self, slot: int, value: float) -> None:
+        if value > 0:
+            self.running[slot] = value
+            self.speed_log.append(value)
+        else:
+            self.running.pop(slot, None)
         self._update()
 
     def off(self, slot: int) -> None:
         if slot in self.stuck:                       # stuck MOSFET: the pump runs flat out
-            self.running[slot] = 1.0
-            self._update()
+            with self._ramp_lock:
+                self._ramps.pop(slot, None)
+                self._apply(slot, 1.0)
             return
-        was = self.running.pop(slot, None)
-        self._update()
+        was = self.running.get(slot)
+        super().off(slot)
         if was and self.drip_g and slot not in self.empty_slots:
             self.scale.place(self.drip_g)
 
     def all_off(self) -> None:
+        super().all_off()
         self.running.clear()
         self._update()
 
@@ -308,4 +376,4 @@ def build(settings: dict):
         scale = MockScale()
         return MockPumps(scale), scale, MockHalo(hw["led_count"], gate_count=hw.get("gate_led_count", 0))
     scale = Scale(hw["hx711_dt"], hw["hx711_sck"], hw["scale_factor"])
-    return Pumps(hw["pump_pins"]), scale, Halo(hw["led_count"], hw["led_brightness"], hw.get("gate_led_count", 0))
+    return Pumps(hw["pump_pins"], hw.get("pwm_hz", 10000.0), hw.get("soft_start_s", 0.4)), scale, Halo(hw["led_count"], hw["led_brightness"], hw.get("gate_led_count", 0))

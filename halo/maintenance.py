@@ -228,7 +228,7 @@ class Maintenance:
         for s in slots:
             self._set(step=f"Soap through line {s}")
             moved = self._pump(s, c["soap_g"], 30.0)
-            if moved < 5:
+            if moved < min(5.0, c["soap_g"] * 0.5):
                 weak.append(s)
             tick(f"Soap through line {s}")
         self._result("Soap pass", not weak,
