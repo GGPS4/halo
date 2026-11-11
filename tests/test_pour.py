@@ -181,3 +181,15 @@ def test_led_segments_and_ambient(rig):
     assert max(max(c) for c in halo.frame) < 30                          # nothing lit yet
     halo.ambient(1.0, [(255, 0, 0), (0, 255, 0)])
     assert halo.last == "ambient" and any(sum(c) > 0 for c in halo.frame)
+
+
+def test_gate_strip_climbs_from_both_feet():
+    halo = MockHalo(gate_count=52)
+    halo.progress(0.5, (255, 0, 0))
+    lit = [c[0] > 128 for c in halo.gate]
+    assert len(halo.frame) == 24 and len(halo.gate) == 52
+    assert lit[0] and lit[-1]                     # both feet lit at half way
+    assert not lit[25] and not lit[26]            # the top is still dark
+    assert lit == lit[::-1]                       # left and right sides match
+    halo.progress(1.0, (255, 0, 0))
+    assert all(c[0] > 200 for c in halo.gate)

@@ -81,6 +81,7 @@ def create_app(halo) -> Flask:
             strengths=list(STRENGTH),
             sizes={"single": round(halo.engine.size_ml("single")), "double": round(halo.engine.size_ml("double"))},
             ring=halo.halo.frame if hasattr(halo.halo, "frame") else None,
+            gate=getattr(halo.halo, "gate", None),
             mock=bool(halo.settings["hardware"]["mock"]),
         )
 

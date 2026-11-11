@@ -145,12 +145,30 @@ def _scale(c, k):
 
 
 class HaloBase:
-    """Ring animations shared by the real ring and the mock. Subclasses implement _show()."""
+    """Ring animations shared by the real ring and the mock. Subclasses implement _write()."""
 
     n = 24
+    gate_n = 0      # pixels in the strip inside the gate ring, chained after the 24-LED ring
+
+    def _write(self, colors):
+        raise NotImplementedError
+
+    def gate_colors(self, ring: list) -> list:
+        """Map the ring's pattern onto the gate strip. The strip runs from the left foot,
+        over the top, to the right foot, so both sides climb together: whatever fills the
+        ring clockwise rises up the gate from the feet and meets at the top."""
+        g, n = self.gate_n, len(ring)
+        if g <= 0 or n == 0:
+            return []
+        out = []
+        for j in range(g):
+            s = 1.0 - abs(2.0 * j / max(1, g - 1) - 1.0)      # 0 at the feet, 1 at the top
+            out.append(ring[min(n - 1, int(s * (n - 1) + 0.5))])
+        return out
 
     def _show(self, colors):
-        raise NotImplementedError
+        colors = list(colors)
+        self._write(colors + self.gate_colors(colors))
 
     def set_brightness(self, b: float):
         pass
@@ -208,36 +226,38 @@ class HaloBase:
 
 
 class Halo(HaloBase):
-    def __init__(self, count: int, brightness: float):
+    def __init__(self, count: int, brightness: float, gate_count: int = 0):
         import board
         import neopixel_spi  # adafruit-circuitpython-neopixel-spi, Pi only
 
-        self.n = count
+        self.n, self.gate_n = count, gate_count
         self.px = neopixel_spi.NeoPixel_SPI(
-            board.SPI(), count, brightness=brightness, auto_write=False, pixel_order=neopixel_spi.GRB
+            board.SPI(), count + gate_count, brightness=brightness, auto_write=False,
+            pixel_order=neopixel_spi.GRB,
         )
 
     def set_brightness(self, b: float):
         self.px.brightness = max(0.0, min(0.6, b))
 
-    def _show(self, colors):
+    def _write(self, colors):
         for i, c in enumerate(colors):
             self.px[i] = c
         self.px.show()
 
 
 class MockHalo(HaloBase):
-    def __init__(self, count: int = 24, brightness: float = 0.4):
-        self.n = count
+    def __init__(self, count: int = 24, brightness: float = 0.4, gate_count: int = 0):
+        self.n, self.gate_n = count, gate_count
         self.brightness = brightness
-        self.frame = [(0, 0, 0)] * count
+        self.frame = [(0, 0, 0)] * count          # the ring under the glass
+        self.gate = [(0, 0, 0)] * gate_count      # the strip inside the gate ring
         self.last = None
 
     def set_brightness(self, b: float):
         self.brightness = b
 
-    def _show(self, colors):
-        self.frame = list(colors)
+    def _write(self, colors):
+        self.frame, self.gate = list(colors[:self.n]), list(colors[self.n:])
 
     # remember which animation ran last (tests and the web app's mock ring use it)
     def __getattribute__(self, name):
@@ -263,6 +283,6 @@ def build(settings: dict):
     hw = settings["hardware"]
     if hw["mock"]:
         scale = MockScale()
-        return MockPumps(scale), scale, MockHalo(hw["led_count"])
+        return MockPumps(scale), scale, MockHalo(hw["led_count"], gate_count=hw.get("gate_led_count", 0))
     scale = Scale(hw["hx711_dt"], hw["hx711_sck"], hw["scale_factor"])
-    return Pumps(hw["pump_pins"]), scale, Halo(hw["led_count"], hw["led_brightness"])
+    return Pumps(hw["pump_pins"]), scale, Halo(hw["led_count"], hw["led_brightness"], hw.get("gate_led_count", 0))

@@ -23,6 +23,7 @@ behind. Matte black with walnut accents.
 | Plinth | 430 × 500 × 61 mm tub, R50 corners, 5 mm walls | PETG/ASA, matte black |
 | Top plate | 430 × 500 × 8 mm, R50 corners, top at 69 mm; Ø152 tray well, 8 tube holes, 2 slots for the ring feet | Walnut (veneer or walnut PLA) |
 | Gate ring | Ø400 OD / Ø340 ID × 40 mm deep, center 209 mm up, feet drop 60 mm into the plinth and take 4 M3 screws | Matte black, frosted acrylic light strip on the inner face |
+| Gate light | 52 WS2812B pixels (60/m strip, ~870 mm) on the visible inner arc, behind the frosted strip, chained after the 24-LED ring | Lights from both feet up to the top as the drink pours |
 | Display | 5" round touch panel in a Ø156 × 16 bezel, on top of the ring (center ~395 mm) | Black bezel, walnut trim ring |
 | Bottle drum | Ø340 × 331 mm, 4 mm wall, centered 190 mm behind the glass | Matte black |
 | Drum lid | Ø344 × 12 mm | Walnut |
@@ -42,8 +43,9 @@ bottle, through the top plate, to its pump, then up the drum wall and along the 
   for 2 s means an empty bottle). Timed pours drift as tubing wears; weight does not.
 - **Glass detection.** Halo won't pour unless the scale sees a glass, and it pauses if the
   glass is lifted mid-pour.
-- **The halo is the progress bar.** The LED ring under the glass and the on-screen ring
-  fill together as the drink pours.
+- **The gate is the progress bar.** The LED ring under the glass, the strip inside the gate
+  ring and the on-screen ring fill together as the drink pours; on the gate the light climbs
+  both sides from the feet and meets at the top.
 - **Claude as the bartender.** It composes drinks from the bottles that are actually
   loaded, from a mood ("smoky", "low ABV", "surprise me"), and explains each one.
 - **Levi hook.** `POST /api/voice` takes what Levi heard; `POST /api/ring` lights the ring while it listens.
@@ -74,6 +76,10 @@ bottle, through the top plate, to its pump, then up the drum wall and along the 
 | HX711 DT / SCK | 4 / 17 | 29 / 31 |
 | LED data (SPI0 MOSI) | 10 | 19 |
 | 5 V / 3.3 V / GND | — | 2,4 / 1 / 6,9,14,20,25,30,34,39 |
+
+The 52-pixel gate strip is chained to the ring's DOUT, so both run from the one data line
+(`hardware.gate_led_count` in settings; set it to 0 if the strip isn't fitted). Feed the
+strip's 5 V straight from the buck converter rather than through the Pi.
 
 The LED ring is driven over SPI because the PWM-based WS2812 libraries don't run on the
 Pi 5's RP1 chip.

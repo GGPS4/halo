@@ -1,8 +1,8 @@
 # Halo
 
 An AI cocktail maker that pours by weight. It's a sealed "Gate" design in matte black and
-walnut: the glass stands inside an upright ring, on a light ring that fills as the drink
-pours, and eight bottles are hidden in a closed drum behind it. Claude invents drinks from whatever
+walnut: the glass stands inside an upright ring that lights up as the drink pours, and
+eight bottles are hidden in a closed drum behind it. Claude invents drinks from whatever
 bottles are loaded.
 
 ![Halo Gate](docs/img/halo-gate.jpg)
@@ -15,8 +15,9 @@ opens on any phone or laptop on the same Wi-Fi once Halo is running. The source 
   so pours stay accurate as tubing wears. No seconds-per-ounce calibration.
 - **Knows when something's wrong.** Won't pour without a glass, pauses if you lift the
   glass, stops and tells you which bottle ran dry.
-- **The light is the progress bar.** The LED ring under the glass and the ring on the
-  round touchscreen fill together.
+- **The light is the progress bar.** The LED ring under the glass, the light strip inside
+  the gate (it climbs both sides and meets at the top) and the ring on the round
+  touchscreen fill together.
 - **Claude bartender.** Tap a mood (sour, strong, low-ABV, surprise me) or type a request
   on your phone. Claude only uses the bottles that are loaded.
 - **Strength control.** Light, normal or strong changes the spirit-to-mixer ratio without

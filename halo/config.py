@@ -26,6 +26,7 @@ DEFAULTS = {
         "hx711_sck": 17,
         "scale_factor": 420.0,   # raw counts per gram, set by `python -m halo.calibrate`
         "led_count": 24,
+        "gate_led_count": 52,     # 60/m WS2812B strip on the visible arc inside the gate ring; 0 if not fitted
         "led_brightness": 0.4,
     },
     "pour": {
