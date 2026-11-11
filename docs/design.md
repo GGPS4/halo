@@ -38,9 +38,19 @@ bottle, through the top plate, to its pump, then up the drum wall and along the 
 
 ## What is new compared with timed-pump cocktail makers
 
+- **Ready to drink from a cup of ice.** The cup goes on the stage already full of ice and
+  comes off finished. Pour order is lightest to densest, so syrups and juices fall through
+  the spirit and mixer and mix on the way down instead of settling under them. Sizes are set
+  by alcohol: a single holds the ethanol of `pour_oz` (1.5) of 40% spirit, the total follows
+  from the recipe's ABV, and `cup_ml` (240) caps it. Drinks with no alcohol fill the cup.
 - **Pours by weight.** A load cell under the glass measures what actually went in. Each
   pump runs until its target grams are reached, with a stall detector (no weight change
   for 2 s means an empty bottle). Timed pours drift as tubing wears; weight does not.
+- **Pumps learn.** After each ingredient the scale shows how fast the pump ran at full
+  speed and how much landed after it stopped. Both are averaged per pump (`pumps.json`)
+  and the next pour stops early by the learned amount. Learning resets when a different
+  bottle goes in a slot. If flow falls below 70% of what the pump managed with that
+  bottle at first, the app says the tubing is worn.
 - **Glass detection.** Halo won't pour unless the scale sees a glass, and it pauses if the
   glass is lifted mid-pour.
 - **The gate is the progress bar.** The LED ring under the glass, the strip inside the gate

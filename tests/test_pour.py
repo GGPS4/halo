@@ -7,7 +7,7 @@ os.environ["HALO_MOCK"] = "1"
 import pytest
 
 from halo.bartender import Bartender, BartenderError
-from halo.config import Bottle, History, Inventory, load_settings
+from halo.config import Bottle, History, Inventory, PumpLearning, load_settings
 from halo.hardware import MockHalo, MockPumps, MockScale
 from halo.pour import PourEngine, State
 from halo.recipes import Ingredient, Recipe
@@ -16,7 +16,7 @@ from halo.recipes import Ingredient, Recipe
 @pytest.fixture
 def rig(tmp_path):
     settings = load_settings(tmp_path / "none.toml")
-    settings["pour"].update(stall_seconds=0.6, single_oz=0.5, double_oz=1.0)
+    settings["pour"].update(stall_seconds=0.6, pour_oz=0.5, cup_ml=80, settle_s=0.2)
     inv = Inventory(bottles=[Bottle(slot=i) for i in range(1, 9)], path=tmp_path / "b.json")
     inv.bottles[0] = Bottle(1, "Gin", 40, 0.95, "#cfe3dc")
     inv.bottles[1] = Bottle(2, "Tonic", 0, 1.03, "#d9eef7")
@@ -24,7 +24,8 @@ def rig(tmp_path):
     scale = MockScale()
     pumps = MockPumps(scale, flow_g_per_s=20)
     history = History(tmp_path / "h.json")
-    engine = PourEngine(pumps, scale, MockHalo(), settings, inv, history=history)
+    engine = PourEngine(pumps, scale, MockHalo(), settings, inv, history=history,
+                        learning=PumpLearning(tmp_path / "pumps.json"))
     return engine, scale, pumps, inv
 
 
@@ -36,14 +37,29 @@ def place_glass_soon(scale, grams=250, delay=0.2):
     threading.Timer(delay, scale.place, args=(grams,)).start()
 
 
-def test_plan_scales_and_orders_by_density(rig):
+def test_plan_scales_and_orders_lightest_first(rig):
     engine, *_, inv = rig
-    r = Recipe("Sweet", [Ingredient("Gin", 2), Ingredient("Simple Syrup", 1)])
+    r = Recipe("Sweet", [Ingredient("Simple Syrup", 1), Ingredient("Gin", 2)])
     steps = r.plan(inv, 30)
-    assert [s.bottle for s in steps] == ["Simple Syrup", "Gin"]          # densest first
-    assert steps[0].grams == pytest.approx(10 * 1.3)
-    assert steps[1].grams == pytest.approx(20 * 0.95)
-    assert steps[1].color == "#cfe3dc"
+    assert [s.bottle for s in steps] == ["Gin", "Simple Syrup"]          # syrup falls through last
+    assert steps[0].grams == pytest.approx(20 * 0.95)
+    assert steps[1].grams == pytest.approx(10 * 1.3)
+    assert steps[0].color == "#cfe3dc"
+
+
+def test_size_is_one_standard_drink_capped_by_the_cup(rig):
+    engine, *_, inv = rig
+    engine.cfg.update(pour_oz=1.5, cup_ml=240)
+    ethanol = 1.5 * 29.57 * 0.4
+    highball = gt()                                                     # 10% ABV
+    assert engine.size_ml(highball) == pytest.approx(ethanol / 0.10)    # ~177 ml, long
+    neat = Recipe("Neat", [Ingredient("Gin", 1)])
+    assert engine.size_ml(neat) == pytest.approx(1.5 * 29.57)          # 1.5 oz, short
+    assert engine.size_ml(highball, "double") == 240                    # would be 355: cup is full
+    soda = Recipe("Soda", [Ingredient("Tonic", 1)])
+    assert engine.size_ml(soda) == 240                                  # no alcohol: fill the cup
+    gin = lambda st: {s.bottle: s.ml for s in highball.plan(inv, engine.size_ml(highball, "single", st), st)}["Gin"]
+    assert gin("light") < gin("normal") < gin("strong")
 
 
 def test_strength_changes_ratio_not_volume(rig):
@@ -69,12 +85,12 @@ def test_full_pour_hits_target_and_updates_levels(rig):
     engine.start(gt(), "single")
     p = engine.wait(15)
     assert p.state == State.DONE, p.message
-    target = sum(s.grams for s in gt().plan(inv, engine.size_ml("single")))
+    target = sum(s.grams for s in gt().plan(inv, engine.size_ml(gt(), "single")))
     assert p.poured_g == pytest.approx(target, abs=6)
     assert pumps.running == {}
     assert inv.find("Gin").remaining_ml < gin_before                  # feature 4
     assert engine.history.items[-1]["state"] == "done"
-    assert [s["bottle"] for s in p.segments] == ["Tonic", "Gin"]       # feature 28
+    assert [s["bottle"] for s in p.segments] == ["Gin", "Tonic"]       # feature 28, lightest first
 
 
 def test_pump_slows_down_near_target(rig):
@@ -193,3 +209,37 @@ def test_gate_strip_climbs_from_both_feet():
     assert lit == lit[::-1]                       # left and right sides match
     halo.progress(1.0, (255, 0, 0))
     assert all(c[0] > 200 for c in halo.gate)
+
+
+def test_pumps_learn_to_stop_early(rig):
+    """Feature 1: 4 g keeps landing after each pump stops. The first pour overshoots; after
+    a few pours each pump has learned to stop early and lands on target."""
+    engine, scale, pumps, inv = rig
+    pumps.drip_g = 4.0
+    errors = []
+    for _ in range(4):
+        scale._g = 0.0
+        place_glass_soon(scale, delay=0.05)
+        engine.start(gt(), "single")
+        p = engine.wait(15)
+        assert p.state == State.DONE, p.message
+        errors.append(max(abs(r["poured_g"] - r["target_g"]) for r in p.report))
+    assert errors[0] > 2.0                       # 1.5 g default lead, 4 g lands: overshoot
+    assert errors[-1] < 1.0                      # learned
+    gin = engine.learning.entry(1, "Gin")
+    assert gin["after_g"] == pytest.approx(4.0, abs=0.6) and gin["n"] == 4
+    assert engine.learning.entry(2, "Tonic")["flow_gps"] == pytest.approx(20, rel=0.25)   # the long pour
+
+
+def test_learning_resets_for_a_new_bottle_and_flags_worn_tubing(tmp_path):
+    L = PumpLearning(tmp_path / "p.json")
+    for _ in range(5):
+        L.record(1, "Gin", 2.0, 3.0, 0.2)
+    assert L.lead(1, "Gin", 1.5) == pytest.approx(3.0)
+    assert L.lead(1, "Vodka", 1.5) == 1.5            # different bottle: start over
+    for _ in range(12):
+        L.record(1, "Gin", 1.2, 3.0, 0.2)            # tubing wearing: 60% of the starting flow
+    inv = Inventory(bottles=[Bottle(slot=i) for i in range(1, 9)], path=tmp_path / "b.json")
+    inv.bottles[0] = Bottle(1, "Gin", 40, 0.95)
+    assert L.service(inv) and "tubing" in L.service(inv)[0]["message"]
+    assert PumpLearning(tmp_path / "p.json").entry(1, "Gin")["n"] == 17   # saved to disk

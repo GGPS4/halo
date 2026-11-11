@@ -11,17 +11,27 @@ bottles are loaded.
 in your browser). On your own Halo it's at [http://halo.local:8080](http://halo.local:8080) from
 any phone or laptop on the same Wi-Fi. The source is in [`halo/web`](halo/web).
 
-- **Pours by weight, not by timer.** Each pump stops when the scale sees its target grams,
-  so pours stay accurate as tubing wears. No seconds-per-ounce calibration.
-- **Knows when something's wrong.** Won't pour without a glass, pauses if you lift the
-  glass, stops and tells you which bottle ran dry.
+- **Made for a cup of ice.** Set a cup full of ice on the stage and the drink is poured into it,
+  ready to drink: no shaking, no stirring beyond a straw. Ingredients go in lightest first
+  so the heavy ones (juices, syrups) fall through and mix on the way down, and the
+  bartender writes drinks that work built over ice.
+- **Sized by alcohol, not volume.** A single holds one standard pour of spirit (1.5 oz of
+  40% by default) with the mixers sized around it, so a highball comes out long and a
+  spirit-forward drink short, and nothing overflows the cup.
+- **Pours by weight, not by timer.** Each pump stops when the scale sees its target grams.
+- **Each pump learns.** From the scale, every pump learns how fast it runs and how much
+  still lands after it stops, and stops that much early next time. Pours land on target
+  with no calibration step, and Halo tells you when a pump has slowed enough that its
+  tubing needs replacing.
+- **Knows when something's wrong.** Won't pour without a cup, pauses if you lift it, stops
+  and tells you which bottle ran dry.
 - **The light is the progress bar.** The LED ring under the glass, the light strip inside
   the gate (it climbs both sides and meets at the top) and the ring on the round
   touchscreen fill together.
 - **Claude bartender.** Tap a mood (sour, strong, low-ABV, surprise me) or type a request
   on your phone. Claude only uses the bottles that are loaded.
-- **Strength control.** Light, normal or strong changes the spirit-to-mixer ratio without
-  changing the size of the drink.
+- **Strength control.** Light, normal or strong changes how much spirit goes in; the drink
+  stays about the same size.
 - **Bottle levels.** Every pour is weighed and subtracted from the bottle, so Halo warns you
   before a bottle runs dry and keeps a pour history.
 - **Party mode.** Give a theme and Claude writes a short menu from your shelf; the touchscreen

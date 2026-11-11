@@ -39,17 +39,29 @@
       const w = weighted(r), parts = w.reduce((a, [, x]) => a + x, 0) || 1;
       abv = Math.round(w.reduce((a, [i, x]) => a + find(i.bottle).abv * x, 0) / parts * 10) / 10;
     }
-    return {...clone(r), available: !missing.length, missing, abv,
+    const sizes = missing.length ? null : Object.fromEntries(Object.keys(STRENGTH).map(st =>
+      [st, {single: Math.round(sizeMl(r, "single", st)), double: Math.round(sizeMl(r, "double", st))}]));
+    return {...clone(r), available: !missing.length, missing, abv, sizes,
             colors: r.ingredients.map(i => (find(i.bottle) || {}).color || "#555"),
             in_party: db.party.active && db.party.drinks.some(n => n.toLowerCase() === r.name.toLowerCase())};
   }
-  const sizes = () => ({single: Math.round((db.prefs.single_oz || 2) * ML_PER_OZ),
-                        double: Math.round((db.prefs.double_oz || 4) * ML_PER_OZ)});
+  const pourOz = () => +db.prefs.pour_oz || 1.5, cupMl = () => +db.prefs.cup_ml || 240;
+  function abvOf(r, strength) {
+    const w = weighted(r, strength), parts = w.reduce((a, [, x]) => a + x, 0) || 1;
+    return w.reduce((a, [i, x]) => a + (find(i.bottle) || {abv: 0}).abv * x, 0) / parts;
+  }
+  /* Same rule as Halo: a single holds the alcohol of pour_oz of 40% spirit, capped by the cup. */
+  function sizeMl(r, size, strength) {
+    const ethanol = pourOz() * ML_PER_OZ * 0.4 * (size === "double" ? 2 : 1) * (STRENGTH[strength] ?? 1);
+    const abv = abvOf(r, strength);
+    return abv < 0.5 ? cupMl() : Math.min(cupMl(), ethanol / (abv / 100));
+  }
   const low = () => db.bottles.filter(b => b.name && b.level * 100 < db.prefs.low_level_pct).map(b => b.slot);
 
   function state() {
     return {bottles: db.bottles.map(level), recipes: db.recipes.map(recipeJson), party: db.party, prefs: db.prefs,
-            low: low(), moods: SEED.moods, strengths: SEED.strengths, sizes: sizes(), status: db.status,
+            low: low(), moods: SEED.moods, strengths: SEED.strengths, sizes: {pour_oz: pourOz(), cup_ml: cupMl()},
+            service: [], status: db.status,
             ring: null, gate: null, mock: true, demo: true};
   }
 
@@ -74,14 +86,14 @@
     if (missing.length) fail(`Not loaded: ${missing.join(", ")}`);
     strength = STRENGTH[strength] ? strength : db.prefs.default_strength;
     size = size === "double" ? "double" : "single";
-    const total = sizes()[size], w = weighted(r, strength), parts = w.reduce((a, [, x]) => a + x, 0);
+    const total = sizeMl(r, size, strength), w = weighted(r, strength), parts = w.reduce((a, [, x]) => a + x, 0);
     const steps = w.map(([i, x]) => { const b = find(i.bottle), ml = total * x / parts;
       return {bottle: b.name, color: b.color, ml, grams: ml * b.density, density: b.density}; })
-      .sort((a, b) => b.density - a.density);
+      .sort((a, b) => a.density - b.density);                       // lightest first, syrups fall through last
     for (const s of steps) if (find(s.bottle).remaining_ml < s.ml) fail(`${s.bottle} is too low for this drink`);
     const target = steps.reduce((a, s) => a + s.grams, 0);
     db.status = {...idle(), state: "waiting_for_glass", drink: r.name, size, strength, by,
-                 message: "Place a glass on the halo", target_g: Math.round(target * 10) / 10,
+                 message: "Place a cup of ice on the halo", target_g: Math.round(target * 10) / 10,
                  segments: steps.map(s => ({bottle: s.bottle, color: s.color, target_g: Math.round(s.grams * 10) / 10}))};
     db.pour = {steps, target, r, idx: 0, done: 0, got: 0};
   }
@@ -145,6 +157,13 @@
     if (a === "state") return state();
     if (a === "status") return db.status;
     if (a === "stats") return stats();
+    if (a === "pumps" && c === "reset") return {ok: true};
+    if (a === "pumps") return db.bottles.map(b => {
+      const n = db.history.filter(h => h.report && h.report.some(x => x.bottle === b.name)).length;
+      const seed = (b.slot * 37) % 11;                                  // stable, plausible numbers
+      return {slot: b.slot, bottle: b.name, pours: n, ml_per_min: n ? 92 + seed : null, stops_early_g: n ? 2.1 + seed / 10 : null,
+              last_error_g: n ? 0.3 : null, avg_error_g: n ? 0.4 + seed / 40 : null, worn: null};
+    });
     if (a === "prefs") { if (m === "PUT") Object.assign(db.prefs, body); return db.prefs; }
     if (a === "bottles" && b === "swap") {
       const x = db.bottles[body.a - 1], y = db.bottles[body.b - 1];

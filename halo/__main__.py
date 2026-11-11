@@ -12,7 +12,7 @@ from pathlib import Path
 
 from . import hardware
 from .bartender import Bartender
-from .config import ROOT, History, Inventory, Prefs, load_settings
+from .config import ROOT, History, Inventory, Prefs, PumpLearning, load_settings
 from .pour import PourEngine
 from .recipes import RecipeBook
 
@@ -53,12 +53,13 @@ class App:
         self.inventory = Inventory.load()
         self.book = RecipeBook()
         self.history = History()
+        self.learning = PumpLearning()
         self.party = Party()
         self.pumps, self.scale, self.halo = hardware.build(settings)
         self.halo.set_brightness(self.prefs["led_brightness"])
         self.scale.tare()
         self.engine = PourEngine(self.pumps, self.scale, self.halo, settings, self.inventory,
-                                 history=self.history, prefs=self.prefs)
+                                 history=self.history, prefs=self.prefs, learning=self.learning)
         self.bartender = Bartender(settings)
         self.ring_mode = ("", 0.0)          # Levi can ask for "listening" / "thinking" for a few seconds
         self.last_activity = time.monotonic()

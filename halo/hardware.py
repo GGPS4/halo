@@ -41,9 +41,10 @@ class Pumps:
 class MockPumps:
     """Pretends pumps move liquid onto a MockScale; flow follows the PWM speed."""
 
-    def __init__(self, scale: "MockScale", flow_g_per_s: float = 1.6):
+    def __init__(self, scale: "MockScale", flow_g_per_s: float = 1.6, drip_g: float = 0.0):
         self.scale = scale
         self.flow = flow_g_per_s
+        self.drip_g = drip_g          # liquid still in the tube that lands after the pump stops
         self.running: dict[int, float] = {}
         self.empty_slots: set[int] = set()
         self.speed_log: list[float] = []
@@ -57,8 +58,10 @@ class MockPumps:
         self._update()
 
     def off(self, slot: int) -> None:
-        self.running.pop(slot, None)
+        was = self.running.pop(slot, None)
         self._update()
+        if was and self.drip_g and slot not in self.empty_slots:
+            self.scale.place(self.drip_g)
 
     def all_off(self) -> None:
         self.running.clear()

@@ -10,11 +10,11 @@ led_count = 24
 led_brightness = 0.4      # keep <= 0.5; the ring is powered from the Pi's 5 V rail
 
 [pour]
-single_oz = 2.0           # total liquid in a single
-double_oz = 4.0
+pour_oz = 1.5             # a single holds the alcohol of this much 40% spirit (a double: twice)
+cup_ml = 240              # liquid that fits in your cup once it's full of ice; never poured past
 glass_min_g = 60
 stall_seconds = 2.0
-lead_g = 2.5              # stop early by this much; tube drips make up the rest
+lead_g = 2.5              # first-pour guess at what lands after a pump stops; each pump then learns its own
 
 [bartender]
 model = "claude-haiku-5-5"

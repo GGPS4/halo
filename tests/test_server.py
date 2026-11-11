@@ -22,7 +22,7 @@ def client(tmp_path, monkeypatch):
     for m in (halo.recipes, halo.pour, halo.server, halo.__main__):
         importlib.reload(m)
     app = halo.__main__.App(halo.config.load_settings())
-    app.engine.cfg.update(single_oz=0.5, stall_seconds=0.6)
+    app.engine.cfg.update(pour_oz=0.5, cup_ml=60, stall_seconds=0.6, settle_s=0.2)
     app.pumps.flow = 25
     web = halo.server.create_app(app)
     c = web.test_client()
@@ -38,7 +38,10 @@ def test_web_app_served(client):
 
 def test_state_has_everything(client):
     s = client.get("/api/state").json
-    assert len(s["bottles"]) == 8 and s["recipes"] and "single" in s["sizes"]
+    assert len(s["bottles"]) == 8 and s["recipes"] and s["sizes"]["cup_ml"] == 60
+    gh = next(r for r in s["recipes"] if r["name"] == "Garden Highball")
+    assert gh["sizes"]["light"]["single"] <= gh["sizes"]["normal"]["single"] <= gh["sizes"]["normal"]["double"] <= 60
+    assert s["service"] == []
     assert all("available" in r for r in s["recipes"])
 
 
@@ -88,9 +91,10 @@ def test_party_activate_and_end(client):
 
 
 def test_prefs_and_ring(client):
-    p = client.put("/api/prefs", json={"led_brightness": 5, "ambient": False, "single_oz": 1.5}).json
+    p = client.put("/api/prefs", json={"led_brightness": 5, "ambient": False, "pour_oz": 9}).json
     assert p["led_brightness"] == 0.6 and p["ambient"] is False
-    assert client.halo.engine.size_ml("single") == pytest.approx(1.5 * 29.57)
+    assert client.halo.engine._setting("pour_oz") == pytest.approx(4.0)      # clamped
+    client.put("/api/prefs", json={"pour_oz": None})
     client.post("/api/ring", json={"mode": "listening", "seconds": 5})
     client.halo.idle_ring(time.monotonic())
     assert client.halo.halo.last == "listening"
@@ -99,3 +103,11 @@ def test_prefs_and_ring(client):
 def test_voice_can_be_disabled(client):
     client.put("/api/prefs", json={"voice_enabled": False})
     assert client.post("/api/voice", json={"text": "a margarita"}).status_code == 403
+
+
+def test_pumps_report_and_reset(client):
+    client.halo.learning.record(1, "Gin", 1.6, 2.5, 0.4)
+    rows = client.get("/api/pumps").json
+    assert rows[0]["bottle"] == "Gin" and rows[0]["pours"] == 1 and rows[0]["ml_per_min"] > 90
+    assert client.post("/api/pumps/1/reset").json["ok"]
+    assert client.get("/api/pumps").json[0]["pours"] == 0

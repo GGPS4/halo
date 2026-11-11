@@ -75,9 +75,20 @@ class Recipe:
             b = inv.find(ing.bottle)
             ml = total_ml * w / parts
             steps.append(Step(b.slot, b.name, ml * b.density, ml, b.color))
-        # Densest first so lighter spirits mix in on top of syrups and juices.
-        steps.sort(key=lambda s: -inv.find(s.bottle).density)
+        # Lightest first, densest last. Drinks are poured over ice and served without shaking,
+        # so each heavier liquid should fall through what's already in the cup and mix on the
+        # way down; poured the other way round, spirits float on a layer of syrup.
+        steps.sort(key=lambda s: inv.find(s.bottle).density)
         return steps
+
+    def total_ml(self, inv: Inventory, ethanol_ml: float, strength: str = "normal", cup_ml: float = 240.0) -> float:
+        """How much to pour so the drink holds ethanol_ml of alcohol, never more than fits in
+        the cup. A highball comes out long and a spirit-forward drink short, each with the same
+        alcohol; drinks with no alcohol fill the cup."""
+        abv = self.abv(inv, strength)
+        if abv < 0.5:
+            return cup_ml
+        return min(cup_ml, ethanol_ml / (abv / 100.0))
 
     def abv(self, inv: Inventory, strength: str = "normal") -> float:
         weighted = self.weighted_parts(inv, strength)

@@ -3,6 +3,8 @@
 The touchscreen, the web app and Levi all talk to the same API:
 
   GET  /api/state                     everything the web app needs in one call
+  GET  /api/pumps                     what each pump has learned (flow, early stop, accuracy)
+  POST /api/pumps/<slot>/reset        forget it, e.g. after new tubing
   GET  /api/status                    live pour progress (polled during a pour)
   PUT  /api/bottles/<slot>            set what's in a slot
   POST /api/bottles/<slot>/refill     mark a slot full again
@@ -61,6 +63,9 @@ def create_app(halo) -> Flask:
         d["abv"] = round(r.abv(inv), 1) if not missing else None
         d["colors"] = [(inv.find(i.bottle).color if inv.find(i.bottle) else "#555") for i in r.ingredients]
         d["in_party"] = r.name.lower() in {n.lower() for n in halo.party.data["drinks"]} and halo.party.data["active"]
+        # ml each size pours at each strength, so the web app can show it before pouring
+        d["sizes"] = None if missing else {st: {sz: round(halo.engine.size_ml(r, sz, st)) for sz in ("single", "double")}
+                                           for st in STRENGTH}
         return d
 
     def err(msg, code=400):
@@ -79,7 +84,8 @@ def create_app(halo) -> Flask:
             status=halo.engine.progress.to_dict(),
             moods=list(MOODS),
             strengths=list(STRENGTH),
-            sizes={"single": round(halo.engine.size_ml("single")), "double": round(halo.engine.size_ml("double"))},
+            sizes={"pour_oz": halo.engine._setting("pour_oz"), "cup_ml": halo.engine._setting("cup_ml")},
+            service=halo.learning.service(halo.inventory),
             ring=halo.halo.frame if hasattr(halo.halo, "frame") else None,
             gate=getattr(halo.halo, "gate", None),
             mock=bool(halo.settings["hardware"]["mock"]),
@@ -279,7 +285,7 @@ def create_app(halo) -> Flask:
             halo.set_ring("", 0)
             return err(str(e), 409)
         halo.set_ring("", 0)
-        say = f"Making a {order['size']} {r.name}. Put a glass on the halo."
+        say = f"Making a {order['size']} {r.name}. Put a cup of ice on the halo."
         return jsonify(ok=True, drink=r.name, size=order["size"], strength=order["strength"], say=say)
 
     @app.post("/api/ring")
@@ -293,6 +299,18 @@ def create_app(halo) -> Flask:
     def stats():
         return jsonify(halo.history.stats())
 
+    # ------------------------------------------------------------ pump learning
+    @app.get("/api/pumps")
+    def pumps():
+        return jsonify(halo.learning.report(halo.inventory))
+
+    @app.post("/api/pumps/<int:slot>/reset")
+    def reset_pump(slot):
+        if not 1 <= slot <= 8:
+            return err("slot must be 1-8")
+        halo.learning.reset(slot)
+        return jsonify(ok=True)
+
     @app.get("/api/prefs")
     def get_prefs():
         return jsonify(halo.prefs.data)
@@ -303,9 +321,13 @@ def create_app(halo) -> Flask:
         if "led_brightness" in d:
             d["led_brightness"] = max(0.05, min(0.6, float(d["led_brightness"])))
             halo.halo.set_brightness(d["led_brightness"])
-        for k in ("single_oz", "double_oz"):
+        limits = {"pour_oz": (0.5, 4.0), "cup_ml": (60.0, 700.0)}
+        for k, (lo, hi) in limits.items():
             if k in d and d[k] not in (None, ""):
-                d[k] = max(0.5, min(12.0, float(d[k])))
+                try:
+                    d[k] = max(lo, min(hi, float(d[k])))
+                except (TypeError, ValueError):
+                    return err(f"{k} must be a number")
         return jsonify(halo.prefs.update(d))
 
     return app
