@@ -1,0 +1,27 @@
+# Copy to config.toml and change only what you need; everything else uses defaults.
+
+[hardware]
+mock = false
+pump_pins = [27, 22, 23, 24, 25, 5, 6, 13]   # Halo Driver Board v1
+hx711_dt = 4
+hx711_sck = 17
+scale_factor = 420.0      # run: python -m halo.calibrate scale
+led_count = 24
+led_brightness = 0.4      # keep <= 0.5; the ring is powered from the Pi's 5 V rail
+
+[pour]
+single_oz = 2.0           # total liquid in a single
+double_oz = 4.0
+glass_min_g = 60
+stall_seconds = 2.0
+lead_g = 2.5              # stop early by this much; tube drips make up the rest
+
+[bartender]
+model = "claude-haiku-5-5"
+
+[server]
+port = 8080
+
+[ui]
+fullscreen = true
+size = 1080

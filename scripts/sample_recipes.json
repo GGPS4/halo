@@ -1,0 +1,17 @@
+[
+  {"name": "Garden Highball", "description": "Gin, lime and bubbles. Crisp and very easy to like.",
+   "ingredients": [{"bottle": "Gin", "parts": 1.5}, {"bottle": "Lime Juice", "parts": 0.5}, {"bottle": "Simple Syrup", "parts": 0.4}, {"bottle": "Soda Water", "parts": 3}],
+   "garnish": "cucumber ribbon", "glass": "highball", "color": "#d6ecd9", "created_by": "you", "tags": ["refreshing"]},
+  {"name": "Daiquiri", "description": "The classic three-ingredient rum sour. Bright, clean, tart.",
+   "ingredients": [{"bottle": "White Rum", "parts": 2}, {"bottle": "Lime Juice", "parts": 1}, {"bottle": "Simple Syrup", "parts": 0.75}],
+   "garnish": "lime wheel", "glass": "coupe", "color": "#eef1cf", "created_by": "you", "tags": ["sour", "classic"]},
+  {"name": "Margarita", "description": "Tequila, orange and lime, built straight. Add salt and ice.",
+   "ingredients": [{"bottle": "Tequila Blanco", "parts": 2}, {"bottle": "Orange Liqueur", "parts": 1}, {"bottle": "Lime Juice", "parts": 1}],
+   "garnish": "salt rim", "glass": "rocks", "color": "#e6e59a", "created_by": "you", "tags": ["sour", "classic"]},
+  {"name": "Bourbon Smash", "description": "Bourbon softened with orange and a touch of sugar.",
+   "ingredients": [{"bottle": "Bourbon", "parts": 2}, {"bottle": "Orange Liqueur", "parts": 0.5}, {"bottle": "Simple Syrup", "parts": 0.25}],
+   "garnish": "orange peel", "glass": "rocks", "color": "#c27a31", "created_by": "you", "tags": ["strong"]},
+  {"name": "Rum Fizz", "description": "Light rum and lime topped long with soda.",
+   "ingredients": [{"bottle": "White Rum", "parts": 1.5}, {"bottle": "Lime Juice", "parts": 0.75}, {"bottle": "Simple Syrup", "parts": 0.5}, {"bottle": "Soda Water", "parts": 3}],
+   "garnish": "mint", "glass": "highball", "color": "#e8f3e6", "created_by": "you", "tags": ["refreshing", "low"]}
+]

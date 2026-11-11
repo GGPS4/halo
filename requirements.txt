@@ -1,0 +1,7 @@
+anthropic>=0.40
+flask>=3.0
+pygame>=2.5
+gpiozero>=2.0
+lgpio>=0.2
+adafruit-blinka>=8.0
+adafruit-circuitpython-neopixel-spi>=1.0
