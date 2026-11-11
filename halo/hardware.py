@@ -1,7 +1,7 @@
 """Pumps, scale and LED ring, each with a mock twin for development off the Pi.
 
 Real drivers import their Pi-only libraries lazily so the rest of Halo (tests, the web
-page, the UI) runs on any computer with HALO_MOCK=1.
+app, the UI) runs on any computer with HALO_MOCK=1.
 """
 from __future__ import annotations
 
@@ -10,46 +10,59 @@ import threading
 import time
 
 
+def hex_rgb(h: str, fallback=(240, 170, 80)):
+    h = (h or "").lstrip("#")
+    try:
+        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+    except ValueError:
+        return fallback
+
+
 # ---------------------------------------------------------------- pumps
 class Pumps:
+    """PWM on each MOSFET gate, so pumps can slow down near the target (feature 34)."""
+
     def __init__(self, pins: list[int]):
-        from gpiozero import DigitalOutputDevice  # Pi only
+        from gpiozero import PWMOutputDevice  # Pi only
 
-        self._outs = [DigitalOutputDevice(p, initial_value=False) for p in pins]
+        self._outs = [PWMOutputDevice(p, initial_value=0, frequency=200) for p in pins]
 
-    def on(self, slot: int) -> None:
-        self._outs[slot - 1].on()
+    def on(self, slot: int, speed: float = 1.0) -> None:
+        self._outs[slot - 1].value = max(0.0, min(1.0, speed))
 
     def off(self, slot: int) -> None:
-        self._outs[slot - 1].off()
+        self._outs[slot - 1].value = 0
 
     def all_off(self) -> None:
         for o in self._outs:
-            o.off()
+            o.value = 0
 
 
 class MockPumps:
-    """Pretends pumps move liquid onto a MockScale."""
+    """Pretends pumps move liquid onto a MockScale; flow follows the PWM speed."""
 
     def __init__(self, scale: "MockScale", flow_g_per_s: float = 1.6):
         self.scale = scale
         self.flow = flow_g_per_s
-        self.running: set[int] = set()
+        self.running: dict[int, float] = {}
         self.empty_slots: set[int] = set()
+        self.speed_log: list[float] = []
 
-    def on(self, slot: int) -> None:
-        self.running.add(slot)
-        if slot not in self.empty_slots:
-            self.scale.flow = self.flow
+    def _update(self):
+        self.scale.flow = sum(self.flow * s for slot, s in self.running.items() if slot not in self.empty_slots)
+
+    def on(self, slot: int, speed: float = 1.0) -> None:
+        self.running[slot] = speed
+        self.speed_log.append(speed)
+        self._update()
 
     def off(self, slot: int) -> None:
-        self.running.discard(slot)
-        if not self.running:
-            self.scale.flow = 0.0
+        self.running.pop(slot, None)
+        self._update()
 
     def all_off(self) -> None:
         self.running.clear()
-        self.scale.flow = 0.0
+        self._update()
 
 
 # ---------------------------------------------------------------- scale
@@ -127,7 +140,74 @@ class MockScale:
 WARM = (255, 170, 80)
 
 
-class Halo:
+def _scale(c, k):
+    return tuple(int(v * k) for v in c)
+
+
+class HaloBase:
+    """Ring animations shared by the real ring and the mock. Subclasses implement _show()."""
+
+    n = 24
+
+    def _show(self, colors):
+        raise NotImplementedError
+
+    def set_brightness(self, b: float):
+        pass
+
+    def off(self):
+        self._show([(0, 0, 0)] * self.n)
+
+    def breathe(self, t: float, color=WARM):
+        """Slow breathing glow while waiting for a glass."""
+        k = 0.15 + 0.35 * (0.5 + 0.5 * math.sin(t * 1.6))
+        self._show([_scale(color, k)] * self.n)
+
+    def progress(self, fraction: float, color=WARM):
+        f = max(0.0, min(1.0, fraction)) * self.n
+        self._show([_scale(color, 0.08 + 0.92 * (1.0 if i + 1 <= f else max(0.0, f - i))) for i in range(self.n)])
+
+    def segments(self, segs: list[tuple[tuple, float]], done_g: float):
+        """Feature 28: each ingredient owns a share of the ring in its own color, and the
+        ring fills clockwise as the scale sees liquid land. segs = [(rgb, target_g), ...]"""
+        total = sum(g for _, g in segs) or 1.0
+        out = []
+        for i in range(self.n):
+            mid = (i + 0.5) / self.n * total               # grams this pixel represents
+            acc, color = 0.0, segs[-1][0] if segs else WARM
+            for c, g in segs:
+                if mid <= acc + g:
+                    color = c
+                    break
+                acc += g
+            lit = max(0.0, min(1.0, (done_g - i / self.n * total) / (total / self.n)))
+            out.append(_scale(color, 0.06 + 0.94 * lit))
+        self._show(out)
+
+    def ambient(self, t: float, colors: list[tuple]):
+        """Feature 15: slow drift of the loaded bottles' colors around the ring when idle."""
+        if not colors:
+            return self.breathe(t, (90, 70, 50))
+        out = []
+        for i in range(self.n):
+            p = (i / self.n * len(colors) + t * 0.08) % len(colors)
+            a, b = colors[int(p)], colors[(int(p) + 1) % len(colors)]
+            f = p - int(p)
+            c = tuple(int(a[j] + (b[j] - a[j]) * f) for j in range(3))
+            k = 0.25 + 0.15 * math.sin(t * 0.7 + i * 0.4)
+            out.append(_scale(c, k))
+        self._show(out)
+
+    def listening(self, t: float):
+        """Feature 14: soft white comet while Levi is taking an order."""
+        head = (t * 14) % self.n
+        self._show([_scale((210, 225, 255), max(0.05, 1 - ((head - i) % self.n) / 6)) for i in range(self.n)])
+
+    def flash(self, color):
+        self._show([color] * self.n)
+
+
+class Halo(HaloBase):
     def __init__(self, count: int, brightness: float):
         import board
         import neopixel_spi  # adafruit-circuitpython-neopixel-spi, Pi only
@@ -137,48 +217,37 @@ class Halo:
             board.SPI(), count, brightness=brightness, auto_write=False, pixel_order=neopixel_spi.GRB
         )
 
+    def set_brightness(self, b: float):
+        self.px.brightness = max(0.0, min(0.6, b))
+
     def _show(self, colors):
         for i, c in enumerate(colors):
             self.px[i] = c
         self.px.show()
 
-    def off(self):
-        self._show([(0, 0, 0)] * self.n)
 
-    def breathe(self, t: float, color=WARM):
-        """Slow breathing glow while waiting for a glass."""
-        k = 0.15 + 0.35 * (0.5 + 0.5 * math.sin(t * 1.6))
-        self._show([tuple(int(v * k) for v in color)] * self.n)
-
-    def progress(self, fraction: float, color=WARM):
-        """Fill the ring clockwise from the front; the leading pixel fades in smoothly."""
-        f = max(0.0, min(1.0, fraction)) * self.n
-        out = []
-        for i in range(self.n):
-            k = 1.0 if i + 1 <= f else max(0.0, f - i)
-            out.append(tuple(int(v * (0.08 + 0.92 * k)) for v in color))
-        self._show(out)
-
-    def flash(self, color):
-        self._show([color] * self.n)
-
-
-class MockHalo:
+class MockHalo(HaloBase):
     def __init__(self, count: int = 24, brightness: float = 0.4):
         self.n = count
+        self.brightness = brightness
+        self.frame = [(0, 0, 0)] * count
         self.last = None
 
-    def off(self):
-        self.last = ("off",)
+    def set_brightness(self, b: float):
+        self.brightness = b
 
-    def breathe(self, t, color=WARM):
-        self.last = ("breathe",)
+    def _show(self, colors):
+        self.frame = list(colors)
 
-    def progress(self, fraction, color=WARM):
-        self.last = ("progress", round(fraction, 3))
-
-    def flash(self, color):
-        self.last = ("flash", color)
+    # remember which animation ran last (tests and the web app's mock ring use it)
+    def __getattribute__(self, name):
+        attr = object.__getattribute__(self, name)
+        if name in ("off", "breathe", "progress", "segments", "ambient", "listening", "flash"):
+            def wrapped(*a, **k):
+                object.__setattr__(self, "last", name)
+                return attr(*a, **k)
+            return wrapped
+        return attr
 
 
 def _is_pi5() -> bool:

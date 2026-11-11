@@ -12,8 +12,33 @@ invents drinks from whatever bottles are loaded.
   round touchscreen fill together.
 - **Claude bartender.** Tap a mood (sour, strong, low-ABV, surprise me) or type a request
   on your phone. Claude only uses the bottles that are loaded.
-- **Phone setup page and API.** `http://halo.local:8080` for bottles and drinks;
-  `POST /api/pour` so a voice assistant can order a drink.
+- **Strength control.** Light, normal or strong changes the spirit-to-mixer ratio without
+  changing the size of the drink.
+- **Bottle levels.** Every pour is weighed and subtracted from the bottle, so Halo warns you
+  before a bottle runs dry and keeps a pour history.
+- **Party mode.** Give a theme and Claude writes a short menu from your shelf; the touchscreen
+  then shows only those drinks. You can also pick the menu yourself.
+- **Pour colors.** The LED ring and the on-screen ring split into each ingredient's share in
+  its own color and fill as the drink pours.
+- **Soft stop.** Pumps slow down over the last few grams so each ingredient stops on target.
+- **Ambient mode.** When idle, the ring and the screen drift through your bottles' colors.
+- **Levi voice orders.** `POST /api/voice` with what Levi heard; Halo picks or invents the drink.
+- **Drip tray.** A removable tray with a slotted grille surrounds the glass stage.
+
+## The Halo app
+
+Open `http://halo.local:8080` on your phone or laptop (add it to your home screen for an
+app icon). From there you can:
+
+- set what's in each of the 8 slots on a top-down map of the machine, mark bottles refilled,
+  and swap slots
+- browse, search, favorite, add and edit drinks, with a live preview of the ratio and ABV
+- pour any drink at single or double size and light, normal or strong
+- ask the bartender for a new drink and save the ones you like
+- start and end party menus
+- see stats: most-poured drinks, usage by bottle, recent pours
+- change ring brightness, ambient mode, drink sizes, low-bottle warnings and voice orders
+- download and import your drink library
 
 The full build (parts, wiring, printing, assembly) is in the Halo build guide. The design
 spec is in [`docs/design.md`](docs/design.md) and the driver board in [`pcb/`](pcb/).
@@ -60,6 +85,13 @@ or the LED brightness. `bottles.json` and `recipes.json` are written by the app.
 ## Ordering a drink from another device (Levi)
 
 ```bash
+# what Levi heard, Halo does the rest
+curl -X POST http://halo.local:8080/api/voice \
+     -H 'content-type: application/json' \
+     -d '{"text": "a strong double margarita"}'
+# light the ring while Levi is listening
+curl -X POST http://halo.local:8080/api/ring -d '{"mode": "listening"}' -H 'content-type: application/json'
+# or order an exact drink
 curl -X POST http://halo.local:8080/api/pour \
      -H 'content-type: application/json' \
      -d '{"drink": "Garden Highball", "size": "single"}'

@@ -1,73 +1,238 @@
-"""Phone-friendly setup page plus a small JSON API (used by the touchscreen and by Levi)."""
+"""Halo's web app (phone / laptop) and the JSON API behind it.
+
+The touchscreen, the web app and Levi all talk to the same API:
+
+  GET  /api/state                     everything the web app needs in one call
+  GET  /api/status                    live pour progress (polled during a pour)
+  PUT  /api/bottles/<slot>            set what's in a slot
+  POST /api/bottles/<slot>/refill     mark a slot full again
+  POST /api/bottles/swap              {a, b} swap two slots
+  GET/POST/DELETE /api/recipes...     drink library
+  POST /api/recipes/<name>/favorite
+  GET  /api/recipes/export  POST /api/recipes/import
+  POST /api/bartender                 {request} -> a drink preview from Claude
+  GET/POST/DELETE /api/party          themed party menu (feature 8)
+  POST /api/pour  POST /api/cancel
+  POST /api/voice                     {text} -> Levi voice orders (feature 14)
+  POST /api/ring                      {mode: listening|thinking, seconds}
+  GET  /api/stats   GET/PUT /api/prefs
+"""
 from __future__ import annotations
 
-from flask import Flask, jsonify, render_template_string, request
+from pathlib import Path
+
+from flask import Flask, jsonify, request, send_from_directory
 
 from .bartender import MOODS, BartenderError
 from .config import Bottle
 from .pour import PourError
-from .recipes import Ingredient, Recipe
+from .recipes import STRENGTH, Recipe
+
+WEB = Path(__file__).parent / "web"
 
 
 def create_app(halo) -> Flask:
-    """`halo` is the App object from main.py (inventory, book, engine, bartender)."""
-    app = Flask(__name__)
+    """`halo` is the App object from __main__ (inventory, book, engine, bartender, ...)."""
+    app = Flask(__name__, static_folder=None)
 
+    @app.before_request
+    def _activity():
+        if request.path.startswith("/api/") and request.method != "GET":
+            halo.touch()
+
+    # ------------------------------------------------------------ web app
     @app.get("/")
     def index():
-        return render_template_string(PAGE, bottles=halo.inventory.bottles,
-                                      recipes=halo.book.recipes, moods=MOODS)
+        return send_from_directory(WEB, "index.html")
 
-    # ---- bottles
+    @app.get("/<path:name>")
+    def static_files(name):
+        if name.startswith("api/"):
+            return jsonify(error="not found"), 404
+        return send_from_directory(WEB, name)
+
+    # ------------------------------------------------------------ helpers
+    def recipe_json(r: Recipe):
+        inv = halo.inventory
+        missing = r.missing(inv)
+        d = r.to_dict()
+        d["available"] = not missing
+        d["missing"] = missing
+        d["abv"] = round(r.abv(inv), 1) if not missing else None
+        d["colors"] = [(inv.find(i.bottle).color if inv.find(i.bottle) else "#555") for i in r.ingredients]
+        d["in_party"] = r.name.lower() in {n.lower() for n in halo.party.data["drinks"]} and halo.party.data["active"]
+        return d
+
+    def err(msg, code=400):
+        return jsonify(error=msg), code
+
+    # ------------------------------------------------------------ state
+    @app.get("/api/state")
+    def state():
+        low = halo.prefs["low_level_pct"]
+        return jsonify(
+            bottles=[b.to_dict() for b in halo.inventory.bottles],
+            low=[b.slot for b in halo.inventory.low(low)],
+            recipes=[recipe_json(r) for r in halo.book.recipes],
+            party=halo.party.data,
+            prefs=halo.prefs.data,
+            status=halo.engine.progress.to_dict(),
+            moods=list(MOODS),
+            strengths=list(STRENGTH),
+            sizes={"single": round(halo.engine.size_ml("single")), "double": round(halo.engine.size_ml("double"))},
+            ring=halo.halo.frame if hasattr(halo.halo, "frame") else None,
+            mock=bool(halo.settings["hardware"]["mock"]),
+        )
+
+    @app.post("/api/dev/glass")
+    def dev_glass():
+        """Mock mode only: pretend someone put a glass on the stage."""
+        if not halo.settings["hardware"]["mock"]:
+            return err("only available in mock mode", 404)
+        halo.scale.place(250)
+        return jsonify(ok=True)
+
+    @app.get("/api/status")
+    def status():
+        d = halo.engine.progress.to_dict()
+        if hasattr(halo.halo, "frame"):
+            d["ring"] = halo.halo.frame
+        return jsonify(d)
+
+    # ------------------------------------------------------------ bottles
     @app.get("/api/bottles")
     def bottles():
-        return jsonify([b.__dict__ for b in halo.inventory.bottles])
+        return jsonify([b.to_dict() for b in halo.inventory.bottles])
 
     @app.put("/api/bottles/<int:slot>")
     def set_bottle(slot):
         if not 1 <= slot <= 8:
-            return jsonify(error="slot must be 1-8"), 400
+            return err("slot must be 1-8")
         d = request.get_json(force=True)
-        halo.inventory.bottles[slot - 1] = Bottle(
-            slot=slot, name=d.get("name", "").strip(), abv=float(d.get("abv", 0) or 0),
-            density=float(d.get("density", 1.0) or 1.0), color=d.get("color", "#c9a46a"),
-        )
+        old = halo.inventory.bottles[slot - 1]
+        name = str(d.get("name", old.name)).strip()
+        try:
+            cap = float(d.get("capacity_ml", old.capacity_ml) or 750)
+            remaining = d.get("remaining_ml")
+            if remaining is None:
+                remaining = cap if name.lower() != old.name.lower() else old.remaining_ml
+            b = Bottle(slot=slot, name=name, abv=float(d.get("abv", old.abv) or 0),
+                       density=float(d.get("density", old.density) or 1.0), color=d.get("color", old.color),
+                       capacity_ml=cap, remaining_ml=min(float(remaining), cap))
+        except (TypeError, ValueError):
+            return err("numbers please for ABV, density and sizes")
+        halo.inventory.bottles[slot - 1] = b
+        halo.inventory.save()
+        return jsonify(b.to_dict())
+
+    @app.post("/api/bottles/<int:slot>/refill")
+    def refill(slot):
+        b = halo.inventory.bottles[slot - 1]
+        b.remaining_ml = b.capacity_ml
+        halo.inventory.save()
+        return jsonify(b.to_dict())
+
+    @app.post("/api/bottles/swap")
+    def swap():
+        d = request.get_json(force=True)
+        a, b = int(d["a"]), int(d["b"])
+        if not (1 <= a <= 8 and 1 <= b <= 8) or a == b:
+            return err("pick two different slots")
+        halo.inventory.swap(a, b)
         halo.inventory.save()
         return jsonify(ok=True)
 
-    # ---- recipes
+    # ------------------------------------------------------------ recipes
     @app.get("/api/recipes")
     def recipes():
-        inv = halo.inventory
-        return jsonify([{**r.to_dict(), "available": not r.missing(inv)} for r in halo.book.recipes])
+        return jsonify([recipe_json(r) for r in halo.book.recipes])
 
     @app.post("/api/recipes")
     def add_recipe():
         d = request.get_json(force=True)
         try:
-            r = Recipe.from_dict({**d, "ingredients": [dict(i) for i in d["ingredients"]]})
-        except (KeyError, TypeError) as e:
-            return jsonify(error=f"bad recipe: {e}"), 400
-        halo.book.add(r)
-        return jsonify(ok=True)
+            r = Recipe.from_dict(d)
+        except (KeyError, TypeError, ValueError) as e:
+            return err(f"bad recipe: {e}")
+        if not r.name.strip() or not r.ingredients:
+            return err("a drink needs a name and at least one ingredient")
+        halo.book.add(r, replace=d.get("replace"))
+        return jsonify(recipe_json(r))
 
     @app.delete("/api/recipes/<name>")
     def delete_recipe(name):
         halo.book.remove(name)
         return jsonify(ok=True)
 
+    @app.post("/api/recipes/<name>/favorite")
+    def favorite(name):
+        r = halo.book.get(name)
+        if not r:
+            return err("unknown drink", 404)
+        r.favorite = not r.favorite
+        halo.book.save()
+        return jsonify(recipe_json(r))
+
+    @app.get("/api/recipes/export")
+    def export():
+        return jsonify([r.to_dict() for r in halo.book.recipes])
+
+    @app.post("/api/recipes/import")
+    def import_():
+        items = request.get_json(force=True)
+        added = 0
+        for d in items if isinstance(items, list) else []:
+            try:
+                halo.book.add(Recipe.from_dict(d))
+                added += 1
+            except (KeyError, TypeError, ValueError):
+                continue
+        return jsonify(added=added)
+
+    # ------------------------------------------------------------ bartender & party
     @app.post("/api/bartender")
     def ask():
         d = request.get_json(force=True)
         try:
-            r = halo.bartender.create(halo.inventory, d.get("request", "surprise"))
+            r = halo.bartender.create(halo.inventory, d.get("request") or "surprise")
         except BartenderError as e:
-            return jsonify(error=str(e)), 400
-        if d.get("save", True):
+            return err(str(e))
+        if d.get("save"):
             halo.book.add(r)
-        return jsonify(r.to_dict())
+        return jsonify(recipe_json(r))
 
-    # ---- pouring
+    @app.get("/api/party")
+    def party():
+        return jsonify(halo.party.data)
+
+    @app.post("/api/party")
+    def start_party():
+        d = request.get_json(force=True)
+        theme = (d.get("theme") or "").strip()
+        if d.get("drinks"):                       # activate a menu the user already reviewed
+            halo.party.set(theme, [str(n) for n in d["drinks"]])
+            return jsonify(halo.party.data)
+        if not theme:
+            return err("give the party a theme")
+        try:
+            menu = halo.bartender.party_menu(halo.inventory, theme, d.get("count", 5))
+        except BartenderError as e:
+            return err(str(e))
+        for r in menu:
+            halo.book.add(r)
+        halo.party.set(theme, [r.name for r in menu])
+        return jsonify(party=halo.party.data, drinks=[recipe_json(r) for r in menu])
+
+    @app.delete("/api/party")
+    def end_party():
+        halo.party.end()
+        return jsonify(halo.party.data)
+
+    # ------------------------------------------------------------ pouring
+    def _start(r: Recipe, size: str, strength: str, by: str):
+        strength = strength if strength in STRENGTH else halo.prefs["default_strength"]
+        halo.engine.start(r, size if size in ("single", "double") else "single", strength, by=by)
+
     @app.post("/api/pour")
     def pour():
         d = request.get_json(force=True)
@@ -77,13 +242,13 @@ def create_app(halo) -> Flask:
                 r = halo.bartender.create(halo.inventory, d["request"])
                 halo.book.add(r)
             except BartenderError as e:
-                return jsonify(error=str(e)), 400
+                return err(str(e))
         if r is None:
-            return jsonify(error="Unknown drink"), 404
+            return err("Unknown drink", 404)
         try:
-            halo.engine.start(r, d.get("size", "single"))
+            _start(r, d.get("size", "single"), d.get("strength", ""), d.get("by", "web"))
         except (PourError, ValueError) as e:
-            return jsonify(error=str(e)), 409
+            return err(str(e), 409)
         return jsonify(ok=True, drink=r.name)
 
     @app.post("/api/cancel")
@@ -91,49 +256,55 @@ def create_app(halo) -> Flask:
         halo.engine.cancel()
         return jsonify(ok=True)
 
-    @app.get("/api/status")
-    def status():
-        p = halo.engine.progress
-        return jsonify(state=p.state.value, drink=p.drink, step=p.step, fraction=round(p.fraction, 3),
-                       poured_g=round(p.poured_g, 1), message=p.message, report=p.report)
+    @app.post("/api/voice")
+    def voice():
+        """Feature 14: Levi sends the words it heard; Halo works out the drink and pours it."""
+        if not halo.prefs["voice_enabled"]:
+            return err("Voice orders are turned off in Halo's settings", 403)
+        text = (request.get_json(force=True).get("text") or "").strip()
+        if not text:
+            return err("no order heard")
+        halo.set_ring("thinking", 10)
+        names = [r.name for r in halo.menu()]
+        try:
+            order = halo.bartender.interpret(text, names)
+            if order["drink"]:
+                r = halo.book.get(order["drink"])
+            else:
+                r = halo.bartender.create(halo.inventory, order["request"])
+                halo.book.add(r)
+            _start(r, order["size"], order["strength"], "levi")
+        except (BartenderError, PourError, ValueError) as e:
+            halo.set_ring("", 0)
+            return err(str(e), 409)
+        halo.set_ring("", 0)
+        say = f"Making a {order['size']} {r.name}. Put a glass on the halo."
+        return jsonify(ok=True, drink=r.name, size=order["size"], strength=order["strength"], say=say)
+
+    @app.post("/api/ring")
+    def ring():
+        d = request.get_json(force=True)
+        halo.set_ring(d.get("mode", ""), float(d.get("seconds", 8)))
+        return jsonify(ok=True)
+
+    # ------------------------------------------------------------ stats & prefs
+    @app.get("/api/stats")
+    def stats():
+        return jsonify(halo.history.stats())
+
+    @app.get("/api/prefs")
+    def get_prefs():
+        return jsonify(halo.prefs.data)
+
+    @app.put("/api/prefs")
+    def put_prefs():
+        d = request.get_json(force=True)
+        if "led_brightness" in d:
+            d["led_brightness"] = max(0.05, min(0.6, float(d["led_brightness"])))
+            halo.halo.set_brightness(d["led_brightness"])
+        for k in ("single_oz", "double_oz"):
+            if k in d and d[k] not in (None, ""):
+                d[k] = max(0.5, min(12.0, float(d[k])))
+        return jsonify(halo.prefs.update(d))
 
     return app
-
-
-PAGE = """<!doctype html><html><head><meta name=viewport content="width=device-width,initial-scale=1">
-<title>Halo</title><style>
-:root{--bg:#0d0d0f;--card:#17171b;--line:#2a2a30;--fg:#f1ede6;--mute:#8d8a85;--accent:#f0aa50}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,sans-serif}
-main{max-width:720px;margin:auto;padding:24px}h1{font-weight:300;letter-spacing:.3em;font-size:28px;margin:8px 0 24px}
-h2{font-size:13px;letter-spacing:.15em;text-transform:uppercase;color:var(--mute);margin:32px 0 12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:10px}
-.row{display:grid;grid-template-columns:28px 1fr 70px 70px 36px;gap:8px;align-items:center}
-input{background:#0f0f12;border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:8px;width:100%}
-input[type=color]{padding:2px;height:36px}button{background:var(--accent);color:#1a1206;border:0;border-radius:999px;padding:9px 16px;font-weight:600;cursor:pointer}
-button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}.chips button{margin:0 6px 8px 0}
-.mute{color:var(--mute)}#status{position:sticky;top:0;background:var(--bg);padding:8px 0;color:var(--accent)}
-</style></head><body><main>
-<h1>HALO</h1><div id=status></div>
-<h2>Bottles</h2>
-{% for b in bottles %}<div class="card row">
-<b>{{b.slot}}</b><input id=n{{b.slot}} value="{{b.name}}" placeholder="empty">
-<input id=a{{b.slot}} value="{{b.abv}}" title="ABV %"><input id=d{{b.slot}} value="{{b.density}}" title="g/ml">
-<input type=color id=c{{b.slot}} value="{{b.color}}"></div>{% endfor %}
-<button onclick=saveBottles()>Save bottles</button>
-<h2>Ask the bartender</h2><div class=chips>{% for k in moods %}<button class=ghost onclick="ask('{{k}}')">{{k}}</button>{% endfor %}</div>
-<div class=card><input id=req placeholder="or describe it: smoky, a little sweet, not too strong"><br><br>
-<button onclick="ask(document.getElementById('req').value)">Create drink</button></div>
-<h2>Drinks</h2><div id=drinks></div>
-</main><script>
-const j=(u,m='GET',b)=>fetch(u,{method:m,headers:{'content-type':'application/json'},body:b&&JSON.stringify(b)}).then(r=>r.json());
-async function saveBottles(){for(let s=1;s<=8;s++){await j('/api/bottles/'+s,'PUT',{name:n(s).value,abv:a(s).value,density:d(s).value,color:c(s).value})}load()}
-const n=s=>document.getElementById('n'+s),a=s=>document.getElementById('a'+s),d=s=>document.getElementById('d'+s),c=s=>document.getElementById('c'+s);
-async function ask(r){st('Thinking up a drink…');const x=await j('/api/bartender','POST',{request:r});st(x.error||('New drink: '+x.name));load()}
-async function pour(name,size){const x=await j('/api/pour','POST',{drink:name,size});st(x.error||'Place a glass on the halo')}
-function st(t){document.getElementById('status').textContent=t}
-async function load(){const rs=await j('/api/recipes');document.getElementById('drinks').innerHTML=rs.map(r=>`<div class=card>
-<b style="color:${r.color}">●</b> <b>${r.name}</b> <span class=mute>${r.created_by=='claude'?'· by Claude':''}</span><br>
-<span class=mute>${r.ingredients.map(i=>i.parts+' '+i.bottle).join(' · ')}</span><br>${r.description}<br><br>
-${r.available?`<button onclick="pour('${r.name.replace(/'/g,"\\\\'")}','single')">Single</button> <button class=ghost onclick="pour('${r.name.replace(/'/g,"\\\\'")}','double')">Double</button>`:'<span class=mute>Missing a bottle</span>'}</div>`).join('')}
-setInterval(async()=>{const s=await j('/api/status');if(s.state!='idle')st(s.message+(s.state=='pouring'?' '+Math.round(s.fraction*100)+'%':''))},1000);load();
-</script></body></html>"""

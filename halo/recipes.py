@@ -1,17 +1,30 @@
-"""Drink recipes, stored as parts so the same recipe scales to a single or a double."""
+"""Drink recipes, stored as parts so the same recipe scales to any size and strength."""
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 from .config import ROOT, Inventory
+
+# Feature 2: strength changes the spirit-to-mixer ratio, not the size of the drink.
+STRENGTH = {"light": 0.7, "normal": 1.0, "strong": 1.35}
+SPIRIT_ABV = 15.0          # anything at or above this counts as a spirit for the strength slider
 
 
 @dataclass
 class Ingredient:
     bottle: str
     parts: float
+
+
+@dataclass
+class Step:
+    slot: int
+    bottle: str
+    grams: float
+    ml: float
+    color: str
 
 
 @dataclass
@@ -24,11 +37,13 @@ class Recipe:
     color: str = "#d9a05b"
     created_by: str = "you"           # "you" or "claude"
     tags: list[str] = field(default_factory=list)
+    favorite: bool = False
 
     @classmethod
     def from_dict(cls, d: dict) -> "Recipe":
-        d = dict(d)
-        d["ingredients"] = [Ingredient(**i) for i in d["ingredients"]]
+        names = {f.name for f in fields(cls)}
+        d = {k: v for k, v in d.items() if k in names}
+        d["ingredients"] = [Ingredient(bottle=str(i["bottle"]), parts=float(i["parts"])) for i in d["ingredients"]]
         return cls(**d)
 
     def to_dict(self) -> dict:
@@ -37,26 +52,37 @@ class Recipe:
     def missing(self, inv: Inventory) -> list[str]:
         return [i.bottle for i in self.ingredients if inv.find(i.bottle) is None]
 
-    def plan(self, inv: Inventory, total_ml: float) -> list[tuple[int, str, float]]:
-        """Return [(slot, bottle name, target grams)] for a pour of total_ml."""
+    def weighted_parts(self, inv: Inventory, strength: str = "normal") -> list[tuple[Ingredient, float]]:
+        k = STRENGTH.get(strength, 1.0)
+        out = []
+        for i in self.ingredients:
+            b = inv.find(i.bottle)
+            spirit = b is not None and b.abv >= SPIRIT_ABV
+            out.append((i, i.parts * (k if spirit else 1.0)))
+        return out
+
+    def plan(self, inv: Inventory, total_ml: float, strength: str = "normal") -> list[Step]:
+        """Pour order and target grams for a drink of total_ml at the given strength."""
         missing = self.missing(inv)
         if missing:
             raise ValueError(f"Not loaded: {', '.join(missing)}")
-        parts = sum(i.parts for i in self.ingredients)
+        weighted = self.weighted_parts(inv, strength)
+        parts = sum(w for _, w in weighted)
         if parts <= 0:
             raise ValueError("Recipe has no volume")
         steps = []
-        for i in self.ingredients:
-            b = inv.find(i.bottle)
-            ml = total_ml * i.parts / parts
-            steps.append((b.slot, b.name, ml * b.density))
-        # Pour the densest first so lighter spirits mix in on top of syrups.
-        steps.sort(key=lambda s: -inv.find(s[1]).density)
+        for ing, w in weighted:
+            b = inv.find(ing.bottle)
+            ml = total_ml * w / parts
+            steps.append(Step(b.slot, b.name, ml * b.density, ml, b.color))
+        # Densest first so lighter spirits mix in on top of syrups and juices.
+        steps.sort(key=lambda s: -inv.find(s.bottle).density)
         return steps
 
-    def abv(self, inv: Inventory) -> float:
-        parts = sum(i.parts for i in self.ingredients) or 1
-        return sum(inv.find(i.bottle).abv * i.parts for i in self.ingredients if inv.find(i.bottle)) / parts
+    def abv(self, inv: Inventory, strength: str = "normal") -> float:
+        weighted = self.weighted_parts(inv, strength)
+        parts = sum(w for _, w in weighted) or 1
+        return sum((inv.find(i.bottle).abv if inv.find(i.bottle) else 0) * w for i, w in weighted) / parts
 
 
 class RecipeBook:
@@ -69,8 +95,9 @@ class RecipeBook:
     def save(self) -> None:
         self.path.write_text(json.dumps([r.to_dict() for r in self.recipes], indent=2))
 
-    def add(self, recipe: Recipe) -> None:
-        self.recipes = [r for r in self.recipes if r.name.lower() != recipe.name.lower()]
+    def add(self, recipe: Recipe, replace: str | None = None) -> None:
+        drop = {recipe.name.lower(), (replace or "").lower()}
+        self.recipes = [r for r in self.recipes if r.name.lower() not in drop]
         self.recipes.append(recipe)
         self.save()
 

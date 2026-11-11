@@ -48,6 +48,32 @@ RECIPE_TOOL = {
     },
 }
 
+MENU_TOOL = {
+    "name": "party_menu",
+    "description": "Return a themed menu of drinks Halo can pour from the loaded bottles.",
+    "input_schema": {
+        "type": "object",
+        "properties": {"drinks": {"type": "array", "minItems": 2, "maxItems": 8,
+                                  "items": RECIPE_TOOL["input_schema"]}},
+        "required": ["drinks"],
+    },
+}
+
+ORDER_TOOL = {
+    "name": "place_order",
+    "description": "Turn a spoken drink order into a structured order.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "drink": {"type": "string", "description": "Exact menu drink name, if the guest asked for one"},
+            "request": {"type": "string", "description": "What they want, if no menu drink fits"},
+            "size": {"type": "string", "enum": ["single", "double"]},
+            "strength": {"type": "string", "enum": ["light", "normal", "strong"]},
+        },
+        "required": ["size", "strength"],
+    },
+}
+
 MOODS = {
     "surprise": "Surprise me with something I probably haven't had.",
     "refreshing": "Something light and refreshing.",
@@ -78,24 +104,64 @@ class Bartender:
             self._client = anthropic.Anthropic()
         return self._client
 
-    def create(self, inv: Inventory, request: str) -> Recipe:
+    def _shelf(self, inv: Inventory) -> str:
         loaded = inv.loaded()
         if not loaded:
             raise BartenderError("No bottles loaded yet")
-        shelf = "\n".join(f"- {b.name} ({b.abv:g}% ABV)" for b in loaded)
-        request = MOODS.get(request, request)
+        return "\n".join(f"- {b.name} ({b.abv:g}% ABV)" for b in loaded)
+
+    def _call(self, tool: dict, content: str) -> dict:
         msg = self.client.messages.create(
             model=self.cfg["model"],
             max_tokens=self.cfg["max_tokens"],
             system=SYSTEM,
-            tools=[RECIPE_TOOL],
-            tool_choice={"type": "tool", "name": "make_drink"},
-            messages=[{"role": "user", "content": f"Loaded bottles:\n{shelf}\n\nGuest asks: {request}"}],
+            tools=[tool],
+            tool_choice={"type": "tool", "name": tool["name"]},
+            messages=[{"role": "user", "content": content}],
         )
         block = next((b for b in msg.content if getattr(b, "type", "") == "tool_use"), None)
         if block is None:
-            raise BartenderError("The bartender didn't return a recipe")
-        return self._validate(block.input, inv)
+            raise BartenderError("The bartender didn't answer")
+        return block.input
+
+    def create(self, inv: Inventory, request: str) -> Recipe:
+        shelf = self._shelf(inv)
+        request = MOODS.get(request, request)
+        data = self._call(RECIPE_TOOL, f"Loaded bottles:\n{shelf}\n\nGuest asks: {request}")
+        return self._validate(data, inv)
+
+    def party_menu(self, inv: Inventory, theme: str, count: int = 5) -> list[Recipe]:
+        """Feature 8: a themed menu of distinct drinks built from what's loaded."""
+        shelf = self._shelf(inv)
+        count = max(2, min(8, int(count)))
+        data = self._call(MENU_TOOL, (
+            f"Loaded bottles:\n{shelf}\n\nDesign a party menu of {count} different drinks for this theme: "
+            f"{theme}. Vary strength and flavor across the menu and include at least one lighter drink."))
+        out, seen = [], set()
+        for d in data.get("drinks", [])[:count]:
+            try:
+                r = self._validate(d, inv)
+            except BartenderError:
+                continue
+            if r.name.lower() not in seen:
+                seen.add(r.name.lower())
+                r.tags = list(dict.fromkeys(r.tags + ["party"]))[:5]
+                out.append(r)
+        if not out:
+            raise BartenderError("Couldn't build a menu from the loaded bottles")
+        return out
+
+    def interpret(self, text: str, drink_names: list[str]) -> dict:
+        """Feature 14: turn a spoken order into {drink | request, size, strength}."""
+        data = self._call(ORDER_TOOL, (
+            f"Drinks on the menu: {', '.join(drink_names) or '(none)'}\n\nSpoken order: \"{text}\"\n"
+            "If the order names or clearly means a menu drink, return it as drink. Otherwise put "
+            "what they want in request so a new drink can be created."))
+        size = data.get("size") if data.get("size") in ("single", "double") else "single"
+        strength = data.get("strength") if data.get("strength") in ("light", "normal", "strong") else "normal"
+        drink = data.get("drink") if data.get("drink") in drink_names else None
+        return {"drink": drink, "request": None if drink else (data.get("request") or text),
+                "size": size, "strength": strength}
 
     @staticmethod
     def _validate(data: dict, inv: Inventory) -> Recipe:

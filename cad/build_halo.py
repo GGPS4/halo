@@ -224,7 +224,9 @@ def make_base():
     cyl(c, BASE_R, BASE_H)
     body = c.bRepBodies.item(0)
     cyl(c, BASE_R - WALL, BASE_H - TOP - 4, z0=4, op=CUT)          # hollow, 4 mm floor, 6 mm top
-    cyl(c, 52, TOP, z0=BASE_H - TOP, op=CUT)                        # opening for the glass stage
+    cyl(c, 76, TOP, z0=BASE_H - TOP, op=CUT)                        # drip-tray well around the stage
+    ring(c, 78, 76, 8, z0=BASE_H - TOP - 8, op=JOIN)                # tray well wall under the top plate
+    ring(c, 78, 70, 2, z0=BASE_H - TOP - 8, op=JOIN)                # ledge the drip tray sits on
     for a in SLOTS:                                                 # tube grommet holes
         r = PITCH_R - 52
         cyl(c, 4, TOP, z0=BASE_H - TOP, x=r * math.cos(math.radians(a)),
@@ -270,6 +272,21 @@ def make_pads_and_bottles():
         tint = look(tints[i], ("glass",))
         if tint:
             ob.appearance = tint
+
+
+def make_drip_tray():
+    """Feature 11: removable drip tray around the glass stage, with a slotted grille on top.
+    Four 6 x 3 mm magnets in the ledge hold it in place."""
+    occ, c = new_part("Drip tray (removable)")
+    z0 = BASE_H - TOP - 6                                            # sits on the ledge at z = 58
+    ring(c, 75, 53, 10.5, z0=z0)                                     # walls reach up to the grille
+    ring(c, 73, 55, 8.5, z0=z0 + 2, op=CUT)                          # the tray channel
+    ring(c, 75, 53, 1.5, z0=BASE_H - 1.5, op=NEW)                   # grille flush with the base top
+    grille = c.bRepBodies.item(1)
+    grille.name = "Grille"
+    for k in range(24):
+        bar(c, 7.5 + 15 * k, 56, 72, 2.4, 1.5, z0=BASE_H - 1.5, op=CUT)
+    paint(c, BLACK())
 
 
 def make_stage():
@@ -359,7 +376,7 @@ def make_electronics():
 
 for name, fn in [("base", make_base), ("pads+bottles", make_pads_and_bottles), ("stage", make_stage),
                  ("spine+halo", make_spine_and_halo), ("display", make_display), ("pumps", make_pumps),
-                 ("electronics", make_electronics)]:
+                 ("electronics", make_electronics), ("drip tray", make_drip_tray)]:
     step(name, fn)
 
 try:

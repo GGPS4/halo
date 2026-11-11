@@ -37,7 +37,10 @@ ring of bottles, under a floating light ring that pours the drink and shows its 
   fill together as the drink pours.
 - **Claude as the bartender.** It composes drinks from the bottles that are actually
   loaded, from a mood ("smoky", "low ABV", "surprise me"), and explains each one.
-- **Levi hook.** A small local HTTP API (`POST /api/pour`) so a voice assistant can order.
+- **Levi hook.** `POST /api/voice` takes what Levi heard; `POST /api/ring` lights the ring while it listens.
+- **Strength, bottle levels, party menus, pour colors, soft stop, ambient mode** (see README).
+- **Drip tray.** Ø150 well in the base top around the stage; a removable black tray (Ø150/Ø106,
+  10.5 mm deep) sits on a ledge with 4 × 6×3 mm magnets and has a 24-slot grille flush with the top.
 
 ## Electronics
 

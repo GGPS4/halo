@@ -1,7 +1,8 @@
 """Round touchscreen UI (pygame), designed for a 1080×1080 circular panel.
 
-Screens: carousel of drinks → mood picker (ask Claude) → pour (ring fills with the LEDs).
-Swipe left/right to browse; tap SINGLE or DOUBLE to pour.
+Screens: carousel of drinks → mood picker (ask Claude) → pour (ring fills in each
+ingredient's color, matching the LEDs) → back. After a while idle it drifts into ambient
+mode: a slow swirl of the loaded bottles' colors (feature 15).
 """
 from __future__ import annotations
 
@@ -12,21 +13,16 @@ import time
 import pygame
 
 from .bartender import MOODS, BartenderError
+from .hardware import hex_rgb
 from .pour import State
+from .recipes import STRENGTH
 
 BG = (12, 12, 14)
 FG = (241, 237, 230)
 MUTE = (130, 126, 120)
 ACCENT = (240, 170, 80)
+WARN = (240, 120, 90)
 TAU = math.tau
-
-
-def hex_rgb(h: str):
-    h = h.lstrip("#")
-    try:
-        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
-    except ValueError:
-        return ACCENT
 
 
 class UI:
@@ -41,11 +37,13 @@ class UI:
         self.f_big, self.f_mid, self.f_small, self.f_tiny = f(78), f(40), f(30), f(24, True)
         self.index = 0
         self.screen_name = "home"
-        self.offset = 0.0           # carousel slide animation
+        self.strength = app.prefs["default_strength"]
+        self.offset = 0.0
         self.drag_x = None
         self.notice, self.notice_t = "", 0.0
         self.thinking = False
         self.mask = self._make_mask()
+        self.ambient_after = app.settings["ui"].get("ambient_after_s", 90)
 
     # ------------------------------------------------------------ helpers
     def _make_mask(self):
@@ -55,7 +53,7 @@ class UI:
         return m
 
     def drinks(self):
-        return self.app.book.available(self.app.inventory)
+        return self.app.menu()
 
     def say(self, text):
         self.notice, self.notice_t = text, time.monotonic()
@@ -89,8 +87,8 @@ class UI:
         if len(pts) > 1:
             pygame.draw.lines(self.screen, color, False, pts, width)
 
-    def pill(self, label, center, active=True):
-        w, h = int(self.S * 0.2), int(self.S * 0.075)
+    def pill(self, label, center, active=True, w=0.2):
+        w, h = int(self.S * w), int(self.S * 0.075)
         rect = pygame.Rect(0, 0, w, h)
         rect.center = center
         if active:
@@ -105,36 +103,48 @@ class UI:
     def draw_home(self):
         ds = self.drinks()
         S, c = self.S, self.c
-        self.ask_rect = self.pill("✦ ASK HALO", (c, int(S * 0.14)), active=False)
+        party = self.app.party.data
+        label = f"✦ {party['theme'].upper()[:18]}" if party["active"] else "✦ ASK HALO"
+        self.ask_rect = self.pill(label, (c, int(S * 0.14)), active=False, w=0.3)
         if not ds:
             self.text("No drinks yet", self.f_mid, FG, (c, c - 20))
-            self.text("Load bottles at  halo.local:8080  or tap Ask", self.f_small, MUTE, (c, c + 40), S * 0.6)
+            self.text("Open halo.local:8080 on your phone to load bottles", self.f_small, MUTE, (c, c + 40), S * 0.6)
             self.single_rect = self.double_rect = pygame.Rect(0, 0, 0, 0)
+            self.strength_rects = {}
             return
         self.index %= len(ds)
         r = ds[self.index]
         inv = self.app.inventory
-        # Ingredient ring: each bottle gets an arc proportional to its share.
-        total = sum(i.parts for i in r.ingredients)
+        total = sum(w for _, w in r.weighted_parts(inv, self.strength))
         a = 0.0
-        for ing in r.ingredients:
+        for ing, w in r.weighted_parts(inv, self.strength):
             b = inv.find(ing.bottle)
-            frac = ing.parts / total
+            frac = w / total
             self.arc(hex_rgb(b.color if b else "#888888"), a + 0.01, frac - 0.02, c - 46, 18)
             a += frac * TAU
         x = c + self.offset
-        self.text(r.name, self.f_big, hex_rgb(r.color), (x, c - 150), S * 0.62)
-        self.text(r.description, self.f_small, FG, (x, c - 20), S * 0.6)
+        name = ("♥ " if r.favorite else "") + r.name
+        self.text(name, self.f_big, hex_rgb(r.color), (x, c - 165), S * 0.62)
+        self.text(r.description, self.f_small, FG, (x, c - 45), S * 0.6)
         line = "  ·  ".join(f"{i.parts:g} {i.bottle}" for i in r.ingredients)
-        self.text(line, self.f_tiny, MUTE, (x, c + 110), S * 0.62)
-        meta = f"{r.abv(inv):.0f}% ABV  ·  {r.glass}" + (f"  ·  {r.garnish}" if r.garnish else "")
-        self.text(meta, self.f_tiny, MUTE, (x, c + 170), S * 0.6)
-        self.single_rect = self.pill("SINGLE", (c - int(S * 0.12), int(S * 0.76)))
-        self.double_rect = self.pill("DOUBLE", (c + int(S * 0.12), int(S * 0.76)), active=False)
+        self.text(line, self.f_tiny, MUTE, (x, c + 75), S * 0.62)
+        meta = f"{r.abv(inv, self.strength):.0f}% ABV  ·  {r.glass}" + (f"  ·  {r.garnish}" if r.garnish else "")
+        self.text(meta, self.f_tiny, MUTE, (x, c + 125), S * 0.6)
+        low = [i.bottle for i in r.ingredients if inv.find(i.bottle) and
+               inv.find(i.bottle).level * 100 < self.app.prefs["low_level_pct"]]
+        if low:
+            self.text("Low: " + ", ".join(low), self.f_tiny, WARN, (x, c + 165), S * 0.6)
+        # strength chips (feature 2)
+        self.strength_rects = {}
+        for k, key in enumerate(STRENGTH):
+            p = (c + (k - 1) * int(S * 0.15), int(S * 0.67))
+            self.strength_rects[key] = self.pill(key.upper(), p, active=key == self.strength, w=0.13)
+        self.single_rect = self.pill("SINGLE", (c - int(S * 0.12), int(S * 0.77)))
+        self.double_rect = self.pill("DOUBLE", (c + int(S * 0.12), int(S * 0.77)), active=False)
         dots = len(ds)
-        for i in range(dots):
+        for i in range(min(dots, 14)):
             col = FG if i == self.index else (70, 68, 66)
-            pygame.draw.circle(self.screen, col, (c + (i - (dots - 1) / 2) * 22, int(S * 0.86)), 5)
+            pygame.draw.circle(self.screen, col, (c + (i - (min(dots, 14) - 1) / 2) * 22, int(S * 0.86)), 5)
 
     def draw_moods(self):
         c, S = self.c, self.S
@@ -154,17 +164,29 @@ class UI:
         self.back_rect = self.pill("BACK", (c, int(self.S * 0.86)), active=False)
 
     def draw_pour(self):
+        """Feature 28: the ring is split into each ingredient's share, in its color,
+        and fills at the same moment the LEDs do."""
         p = self.app.engine.progress
         c, S = self.c, self.S
         recipe = self.app.book.get(p.drink)
         col = hex_rgb(recipe.color) if recipe else ACCENT
-        self.arc((40, 39, 38), 0, 0.999, c - 60, 26)
-        if p.fraction > 0:
-            self.arc(col, 0, min(p.fraction, 0.999), c - 60, 26)
-        self.text(p.drink, self.f_mid, col, (c, c - 120))
+        total = sum(s["target_g"] for s in p.segments) or 1
+        a = 0.0
+        for s in p.segments:
+            frac = s["target_g"] / total
+            seg_col = hex_rgb(s["color"])
+            dim = tuple(int(v * 0.22) for v in seg_col)
+            self.arc(dim, a + 0.004, max(frac - 0.008, 0.001), c - 60, 26)
+            filled = max(0.0, min(frac, p.fraction - a / TAU))
+            if filled > 0:
+                self.arc(seg_col, a + 0.004, max(filled - 0.008, 0.001), c - 60, 26)
+            a += frac * TAU
+        self.text(p.drink, self.f_mid, col, (c, c - 140))
         if p.state in (State.POURING, State.PAUSED):
-            self.text(f"{p.fraction * 100:.0f}%", self.f_big, FG, (c, c))
-        self.text(p.message, self.f_small, MUTE, (c, c + 110), S * 0.6)
+            self.text(f"{p.fraction * 100:.0f}%", self.f_big, FG, (c, c - 20))
+            if p.step:
+                self.text(p.step, self.f_small, hex_rgb(p.color or "#f0aa50"), (c, c + 60))
+        self.text(p.message, self.f_small, MUTE, (c, c + 130), S * 0.6)
         if p.state == State.DONE:
             self.text("tap to finish", self.f_tiny, MUTE, (c, int(S * 0.8)))
         elif p.state in (State.ERROR, State.CANCELLED):
@@ -172,13 +194,29 @@ class UI:
         else:
             self.cancel_rect = self.pill("STOP", (c, int(S * 0.8)), active=False)
 
+    def draw_ambient(self):
+        """Feature 15: slow swirl of the loaded bottles' colors, with the time."""
+        t = time.monotonic()
+        cols = [hex_rgb(b.color) for b in self.app.inventory.loaded()] or [ACCENT]
+        n = 60
+        for i in range(n):
+            p = (i / n * len(cols) + t * 0.05) % len(cols)
+            a, b = cols[int(p)], cols[(int(p) + 1) % len(cols)]
+            f = p - int(p)
+            k = 0.35 + 0.25 * math.sin(t * 0.6 + i * 0.3)
+            cc = tuple(int((a[j] + (b[j] - a[j]) * f) * k) for j in range(3))
+            self.arc(cc, i / n, 1 / n + 0.003, self.c - 30, 40)
+        self.text(time.strftime("%-I:%M"), self.f_big, (200, 196, 190), (self.c, self.c - 10))
+        self.text("tap for drinks", self.f_tiny, MUTE, (self.c, self.c + 70))
+
     # ------------------------------------------------------------ input
     def ask(self, mood):
         def run():
             try:
                 r = self.app.bartender.create(self.app.inventory, mood)
                 self.app.book.add(r)
-                self.index = [d.name for d in self.drinks()].index(r.name)
+                names = [d.name for d in self.drinks()]
+                self.index = names.index(r.name) if r.name in names else 0
                 self.screen_name = "home"
                 self.say(f"New: {r.name}")
             except (BartenderError, ValueError) as e:
@@ -194,12 +232,16 @@ class UI:
         if not ds:
             return
         try:
-            self.app.engine.start(ds[self.index], size)
+            self.app.engine.start(ds[self.index], size, self.strength, by="screen")
             self.screen_name = "pour"
         except Exception as e:
             self.say(str(e))
 
     def on_tap(self, pos):
+        self.app.touch()
+        if self.screen_name == "ambient":
+            self.screen_name = "home"
+            return
         if self.screen_name == "home":
             if self.ask_rect.collidepoint(pos):
                 self.screen_name = "moods"
@@ -207,6 +249,10 @@ class UI:
                 self.pour("single")
             elif self.double_rect.collidepoint(pos):
                 self.pour("double")
+            else:
+                for k, rect in self.strength_rects.items():
+                    if rect.collidepoint(pos):
+                        self.strength = k
         elif self.screen_name == "moods" and not self.thinking:
             if self.back_rect.collidepoint(pos):
                 self.screen_name = "home"
@@ -236,14 +282,23 @@ class UI:
                     self.drag_x = None
                     if abs(dx) > 80 and self.screen_name == "home":
                         self.index += -1 if dx > 0 else 1
+                        self.app.touch()
                     elif abs(dx) < 15:
                         self.on_tap(e.pos)
             if self.drag_x is None:
                 self.offset *= 0.7
-            if self.screen_name == "home" and not self.app.engine.busy:
-                self.app.halo.breathe(time.monotonic(), (90, 70, 50))
+            busy = self.app.engine.busy
+            if busy and self.screen_name != "pour":          # a pour started from the phone or Levi
+                self.screen_name = "pour"
+            idle_for = time.monotonic() - self.app.last_activity
+            if (self.screen_name == "home" and not busy and self.app.prefs["ambient"]
+                    and idle_for > self.ambient_after):
+                self.screen_name = "ambient"
+            if not busy:
+                self.app.idle_ring(time.monotonic())
             self.screen.fill(BG)
-            {"home": self.draw_home, "moods": self.draw_moods, "pour": self.draw_pour}[self.screen_name]()
+            {"home": self.draw_home, "moods": self.draw_moods, "pour": self.draw_pour,
+             "ambient": self.draw_ambient}[self.screen_name]()
             if self.notice and time.monotonic() - self.notice_t < 4:
                 self.text(self.notice, self.f_tiny, ACCENT, (self.c, int(self.S * 0.93)), self.S * 0.5)
             self.screen.blit(self.mask, (0, 0))
