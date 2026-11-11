@@ -7,9 +7,9 @@ bottles are loaded.
 
 ![Halo Gate](docs/img/halo-gate.jpg)
 
-**Web app:** [http://halo.local:8080](http://halo.local:8080). Halo serves it itself, so the link
-opens on any phone or laptop on the same Wi-Fi once Halo is running. The source is in
-[`halo/web`](halo/web).
+**Web app:** [try the demo](https://ggps4.github.io/halo/) (sample bottles, simulated pours, runs
+in your browser). On your own Halo it's at [http://halo.local:8080](http://halo.local:8080) from
+any phone or laptop on the same Wi-Fi. The source is in [`halo/web`](halo/web).
 
 - **Pours by weight, not by timer.** Each pump stops when the scale sees its target grams,
   so pours stay accurate as tubing wears. No seconds-per-ounce calibration.

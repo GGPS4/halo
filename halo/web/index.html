@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#12241d">
-<link rel="manifest" href="/manifest.webmanifest">
-<link rel="icon" href="/icon.svg">
-<link rel="apple-touch-icon" href="/icon.svg">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
 <title>Halo</title>
 <style>
 /* Halo web app. Palette from the machine itself: bottle-glass green, the amber halo,
@@ -110,6 +110,8 @@ input[type=color]::-webkit-color-swatch-wrapper{padding:0}input[type=color]::-we
 /* ---------- home: the ring ---------- */
 .stage{display:grid;grid-template-columns:minmax(260px,420px) 1fr;gap:clamp(24px,5vw,64px);align-items:center;margin-bottom:12px}
 @media (max-width:820px){.stage{grid-template-columns:1fr;justify-items:center;text-align:center}}
+#demo-bar{position:sticky;top:0;z-index:50;padding:8px 16px;background:var(--halo);color:#12241d;font-size:14px;text-align:center}
+#demo-bar a{color:inherit;font-weight:600}
 .ring{position:relative;width:100%;max-width:420px;aspect-ratio:1}
 .ring svg{width:100%;height:100%;overflow:visible}
 .ring .core{position:absolute;inset:22%;display:grid;place-content:center;text-align:center;gap:4px}
@@ -251,6 +253,7 @@ pre{background:var(--glass-3);padding:14px;border-radius:var(--r-sm);overflow:au
 <dialog id="dlg"><div class="sheet" id="sheet"></div></dialog>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+<script src="demo.js"></script>
 <script>
 "use strict";
 /* ------------------------------------------------------------------ state */
@@ -261,6 +264,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const icon = (id, cls="") => `<svg class="${cls}" aria-hidden="true"><use href="#i-${id}"/></svg>`;
 
 async function api(path, opts={}){
+  if(window.HaloDemo) return window.HaloDemo.handle(path, opts);   // GitHub Pages / ?demo: sample data in the browser
   const res = await fetch("/api/"+path, {headers:{"content-type":"application/json"}, ...opts,
                          body: opts.body ? JSON.stringify(opts.body) : undefined});
   const data = await res.json().catch(() => ({}));
@@ -288,6 +292,8 @@ window.addEventListener("hashchange", () => { S.view = location.hash.slice(1) ||
 async function load(){
   try{ S.state = await api("state"); }
   catch(e){ $("#rail-status").textContent = "Can't reach Halo. Is it on and on this Wi-Fi?"; return; }
+  if(S.state.demo && !$("#demo-bar")) document.body.insertAdjacentHTML("afterbegin",
+    `<div id="demo-bar" role="note">Demo with sample bottles. Pours are simulated and changes reset when you reload. <a href="https://github.com/GGPS4/halo">Build your own Halo</a></div>`);
   render();
 }
 const bottles = () => S.state.bottles;
@@ -373,7 +379,7 @@ function pourBar(r, h=10){
 function viewBottles(){
   const sel = S.selSlot;
   return `<h1>Bottles</h1>
-  <p class="lede">This is Halo seen from above. Tap a slot to tell Halo what's in it. The gap at the front is where the glass goes.</p>
+  <p class="lede">This is Halo seen from above, front at the bottom. The bottles stand in the drum at the back and the glass stands in the ring in front. Tap a slot to tell Halo what's in it.</p>
   <div class="bar-top">
     <div class="map">${mapSVG()}</div>
     <div>
@@ -390,15 +396,18 @@ function viewBottles(){
   </div>`;
 }
 function mapSVG(){
-  // 9 positions at 40°, slot 1 starts just clockwise of the front opening (front = bottom).
-  let out = `<svg viewBox="0 0 400 400" role="img" aria-label="Top view of Halo with 8 bottle slots">
-    <circle cx="200" cy="200" r="190" fill="var(--glass-2)" stroke="var(--line)"/>
-    <circle cx="200" cy="200" r="54" fill="rgba(255,180,84,.08)" stroke="rgba(255,180,84,.35)" stroke-dasharray="3 5"/>
-    <text x="200" y="205" text-anchor="middle" fill="var(--mist)" font-size="13" font-family="var(--sans)">glass</text>
-    <path d="M200 392 l-10 -14 h20z" fill="var(--mist)" opacity=".5"/>`;
+  // Gate layout seen from above, front at the bottom: the bottles stand in the drum at the back,
+  // slot 1 at 22.5° right of center going counterclockwise; the glass stands in the ring in front.
+  let out = `<svg viewBox="0 0 400 470" role="img" aria-label="Top view of Halo with 8 bottle slots in the drum and the glass in front">
+    <rect x="6" y="5" width="388" height="450" rx="45" fill="var(--glass-2)" stroke="var(--line)"/>
+    <circle cx="200" cy="180" r="153" fill="rgba(234,242,238,.03)" stroke="var(--line)"/>
+    <rect x="20" y="333" width="360" height="36" rx="18" fill="rgba(255,180,84,.06)" stroke="rgba(255,180,84,.35)"/>
+    <circle cx="200" cy="351" r="34" fill="rgba(255,180,84,.08)" stroke="rgba(255,180,84,.45)" stroke-dasharray="3 5"/>
+    <text x="200" y="356" text-anchor="middle" fill="var(--mist)" font-size="13" font-family="var(--sans)">glass</text>
+    <path d="M200 462 l-10 -14 h20z" fill="var(--mist)" opacity=".5"/>`;
   bottles().forEach(b => {
-    const deg = 90 + 40*b.slot, a = deg*Math.PI/180;      // screen coords: 90° = bottom (front)
-    const x = 200 + 140*Math.cos(a), y = 200 + 140*Math.sin(a), r = 40;
+    const a = (22.5 + 45*(b.slot-1))*Math.PI/180;            // counterclockwise from the right, seen from above
+    const x = 200 + 108*Math.cos(a), y = 180 - 108*Math.sin(a), r = 36;
     const lvl = b.name ? b.level : 0, top = y + r - 2*r*lvl;
     const id = `clip${b.slot}`;
     out += `<g class="slot ${S.selSlot===b.slot||S.swapFrom===b.slot?"sel":""}" tabindex="0" role="button" data-act="slot" data-slot="${b.slot}"
@@ -761,6 +770,7 @@ async function poll(){
         if(ring && !changed && busy()){        // update just the ring and numbers during a pour
           ring.innerHTML = ringSVG(st) + `<div class="core"><div class="pct">${Math.round(st.fraction*100)}%</div><div class="step" style="color:${esc(st.color||"var(--mist)")}">${esc(st.step)}</div></div>`;
           const h = $("#view h1"); if(h) h.textContent = statusLine(st);
+          const l = $("#view .lede"); if(l) l.textContent = st.message + (st.strength!=="normal" ? ` (${st.strength})` : "");
         } else render();
       }
       lastState = st.state;
