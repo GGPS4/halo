@@ -114,7 +114,9 @@ The LED ring is driven over SPI because the PWM-based WS2812 libraries don't run
 Pi 5's RP1 chip.
 
 The Fusion model is the source of truth for these dimensions. `cad/build_gate.py` builds the
-Gate form (Fusion file "Halo Gate Assembly", with every part also saved on its own in
-CAD › Halo Gate Components by `cad/export_components.py`); `cad/build_halo.py` is the earlier open
+Gate form. In Fusion, Halo project › CAD › Halo Gate holds every part as its own file plus
+"Halo Gate Assembly", which places linked copies of those files, so editing a part updates
+the assembly (`cad/export_components.py` saved the parts, `cad/linked_assembly.py` built the
+assembly). The single-file model it came from is CAD › Halo Gate Assembly. `cad/build_halo.py` is the earlier open
 ring-of-bottles version, kept for reference; standard hardware (M3 screws 91290A115, heat-set inserts
 94180A331) comes from McMaster-Carr.
