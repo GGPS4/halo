@@ -4,6 +4,9 @@ The touchscreen, the web app and Levi all talk to the same API:
 
   GET  /api/state                     everything the web app needs in one call
   GET  /api/pumps                     what each pump has learned (flow, early stop, accuracy)
+  POST /api/maintenance/start         {kind: clean|setup}; then answer prompts step by step
+  POST /api/maintenance/answer        {action, data}
+  POST /api/maintenance/cancel
   POST /api/pumps/<slot>/reset        forget it, e.g. after new tubing
   GET  /api/status                    live pour progress (polled during a pour)
   PUT  /api/bottles/<slot>            set what's in a slot
@@ -27,6 +30,7 @@ from flask import Flask, jsonify, request, send_from_directory
 
 from .bartender import MOODS, BartenderError
 from .config import Bottle
+from .maintenance import MaintenanceError
 from .pour import PourError
 from .recipes import STRENGTH, Recipe
 
@@ -86,6 +90,7 @@ def create_app(halo) -> Flask:
             strengths=list(STRENGTH),
             sizes={"pour_oz": halo.engine._setting("pour_oz"), "cup_ml": halo.engine._setting("cup_ml")},
             service=halo.learning.service(halo.inventory),
+            job=halo.maintenance.to_dict(),
             ring=halo.halo.frame if hasattr(halo.halo, "frame") else None,
             gate=getattr(halo.halo, "gate", None),
             mock=bool(halo.settings["hardware"]["mock"]),
@@ -99,11 +104,20 @@ def create_app(halo) -> Flask:
         halo.scale.place(250)
         return jsonify(ok=True)
 
+    @app.post("/api/dev/lift")
+    def dev_lift():
+        """Mock mode only: pretend someone picked the finished drink up."""
+        if not halo.settings["hardware"]["mock"]:
+            return err("only available in mock mode", 404)
+        halo.scale.place(-1000)
+        return jsonify(ok=True)
+
     @app.get("/api/status")
     def status():
         d = halo.engine.progress.to_dict()
         if hasattr(halo.halo, "frame"):
             d["ring"] = halo.halo.frame
+        d["job"] = halo.maintenance.to_dict()
         return jsonify(d)
 
     # ------------------------------------------------------------ bottles
@@ -298,6 +312,26 @@ def create_app(halo) -> Flask:
     @app.get("/api/stats")
     def stats():
         return jsonify(halo.history.stats())
+
+    # ------------------------------------------------------------ self-clean and setup check
+    @app.post("/api/maintenance/start")
+    def maintenance_start():
+        try:
+            return jsonify(halo.maintenance.start((request.get_json(force=True) or {}).get("kind", "")))
+        except MaintenanceError as e:
+            return err(str(e), 409)
+
+    @app.post("/api/maintenance/answer")
+    def maintenance_answer():
+        d = request.get_json(force=True) or {}
+        try:
+            return jsonify(halo.maintenance.answer(str(d.get("action", "")), d.get("data") or {}))
+        except MaintenanceError as e:
+            return err(str(e), 409)
+
+    @app.post("/api/maintenance/cancel")
+    def maintenance_cancel():
+        return jsonify(halo.maintenance.cancel())
 
     # ------------------------------------------------------------ pump learning
     @app.get("/api/pumps")

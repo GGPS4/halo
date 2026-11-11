@@ -22,7 +22,7 @@ def client(tmp_path, monkeypatch):
     for m in (halo.recipes, halo.pour, halo.server, halo.__main__):
         importlib.reload(m)
     app = halo.__main__.App(halo.config.load_settings())
-    app.engine.cfg.update(pour_oz=0.5, cup_ml=60, stall_seconds=0.6, settle_s=0.2)
+    app.engine.cfg.update(pour_oz=0.5, cup_ml=60, stall_seconds=0.6, settle_s=0.2, surge_g_s=80)
     app.pumps.flow = 25
     web = halo.server.create_app(app)
     c = web.test_client()
@@ -111,3 +111,79 @@ def test_pumps_report_and_reset(client):
     assert rows[0]["bottle"] == "Gin" and rows[0]["pours"] == 1 and rows[0]["ml_per_min"] > 90
     assert client.post("/api/pumps/1/reset").json["ok"]
     assert client.get("/api/pumps").json[0]["pours"] == 0
+
+
+def _drive(client, answers, timeout=30):
+    """Answer a maintenance job's prompts by title until it finishes; return the titles seen."""
+    m, seen = client.halo.maintenance, []
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        st = m.to_dict()
+        if st["state"] == "waiting":
+            title = st["prompt"]["title"]
+            seen.append(title)
+            action, data, before = answers[title]
+            if before:
+                before()
+            client.post("/api/maintenance/answer", json={"action": action, "data": data})
+            while m.to_dict()["state"] == "waiting" and m.to_dict()["prompt"]["title"] == title:
+                time.sleep(0.02)
+        elif not st["active"]:
+            return seen
+        time.sleep(0.02)
+    raise AssertionError(f"job didn't finish; stuck at {m.to_dict()}")
+
+
+def _fast(m):
+    m.cfg.update(soap_g=4, rinse_g=4, rinses=1, soak_s=0.2, purge_s=0.05, prime_g=2, prime_max_s=1.5,
+                 flow_s=0.3, catch_max_g=40)
+
+
+def test_self_clean_runs_every_line_and_locks_pouring(client):
+    app = client.halo
+    _fast(app.maintenance)
+    scale = app.scale
+    assert client.post("/api/maintenance/start", json={"kind": "clean"}).status_code == 200
+    r = client.post("/api/pour", json={"drink": "Daiquiri"})
+    assert r.status_code == 409 and "cleaning" in r.json["error"]          # locked while cleaning
+    seen = _drive(client, {
+        "Set down a catch cup": ("next", {}, lambda: scale.place(300)),
+        "Soapy water": ("next", {}, None),
+        "Empty the catch cup": ("next", {}, None),
+        "Clean water": ("next", {}, None),
+        "Dry the lines": ("next", {}, None),
+        "Put the bottles back": ("prime", {}, None),
+    })
+    st = app.maintenance.to_dict()
+    assert st["state"] == "done", st
+    assert "Empty the catch cup" in seen                                   # catch cup never overflows
+    assert {r["label"] for r in st["results"]} >= {"Soap pass", "Rinse", "Lines dried"}
+    assert all(r["ok"] for r in st["results"])
+    assert app.prefs["last_clean"] and not app.engine.locked_by
+
+
+def test_setup_check_scale_lights_and_pumps(client):
+    app = client.halo
+    _fast(app.maintenance)
+    scale = app.scale
+    client.post("/api/maintenance/start", json={"kind": "setup"})
+    _drive(client, {
+        "Clear the stage": ("next", {}, None),
+        "Check the scale": ("weigh", {"known_g": 383}, lambda: scale.place(383)),
+        "Lights": ("yes", {}, lambda: scale.place(-383)),
+        "Pumps": ("next", {}, lambda: scale.place(200)),
+        "Empty the catch cup": ("next", {}, None),
+    })
+    st = app.maintenance.to_dict()
+    assert st["state"] == "done" and st["message"] == "All good.", st
+    pumps = [r for r in st["results"] if r["label"].startswith("Pump ")]
+    assert len(pumps) == 8 and all("ml/min" in r["detail"] for r in pumps)
+
+
+def test_cancel_cleaning(client):
+    client.post("/api/maintenance/start", json={"kind": "clean"})
+    time.sleep(0.1)
+    client.post("/api/maintenance/cancel")
+    st = client.halo.maintenance.wait(5)
+    assert st["state"] == "cancelled" and client.halo.pumps.running == {}
+    assert not client.halo.engine.locked_by

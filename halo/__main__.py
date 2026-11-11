@@ -13,6 +13,7 @@ from pathlib import Path
 from . import hardware
 from .bartender import Bartender
 from .config import ROOT, History, Inventory, Prefs, PumpLearning, load_settings
+from .maintenance import Maintenance
 from .pour import PourEngine
 from .recipes import RecipeBook
 
@@ -61,6 +62,9 @@ class App:
         self.engine = PourEngine(self.pumps, self.scale, self.halo, settings, self.inventory,
                                  history=self.history, prefs=self.prefs, learning=self.learning)
         self.bartender = Bartender(settings)
+        if self.prefs["scale_factor"] and hasattr(self.scale, "factor"):
+            self.scale.factor = float(self.prefs["scale_factor"])
+        self.maintenance = Maintenance(self)
         self.ring_mode = ("", 0.0)          # Levi can ask for "listening" / "thinking" for a few seconds
         self.last_activity = time.monotonic()
 
@@ -73,6 +77,11 @@ class App:
 
     def idle_ring(self, t: float):
         """What the LED ring does when no drink is pouring."""
+        if self.maintenance.active:                 # cleaning or the setup check
+            return self.maintenance.draw_ring(t)
+        color = self.engine.ready_color
+        if color is not None:                       # feature 3: a drink is waiting to be picked up
+            return self.halo.ready(t, color)
         mode, until = self.ring_mode
         if mode and time.monotonic() < until:
             if mode == "listening":

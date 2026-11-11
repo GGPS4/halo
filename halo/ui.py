@@ -188,7 +188,7 @@ class UI:
                 self.text(p.step, self.f_small, hex_rgb(p.color or "#f0aa50"), (c, c + 60))
         self.text(p.message, self.f_small, MUTE, (c, c + 130), S * 0.6)
         if p.state == State.DONE:
-            self.text("tap to finish", self.f_tiny, MUTE, (c, int(S * 0.8)))
+            self.text("Ready. Lift the cup to finish" if p.ready else "tap to finish", self.f_tiny, MUTE, (c, int(S * 0.8)))
         elif p.state in (State.ERROR, State.CANCELLED):
             self.text("tap to go back", self.f_tiny, MUTE, (c, int(S * 0.8)))
         else:
@@ -290,9 +290,13 @@ class UI:
             busy = self.app.engine.busy
             if busy and self.screen_name != "pour":          # a pour started from the phone or Levi
                 self.screen_name = "pour"
+            if (self.screen_name == "pour" and not busy
+                    and self.app.engine.progress.state == State.IDLE):   # feature 3: cup picked up
+                self.screen_name = "home"
+                self.app.touch()
             idle_for = time.monotonic() - self.app.last_activity
             if (self.screen_name == "home" and not busy and self.app.prefs["ambient"]
-                    and idle_for > self.ambient_after):
+                    and self.app.engine.ready_color is None and idle_for > self.ambient_after):
                 self.screen_name = "ambient"
             if not busy:
                 self.app.idle_ring(time.monotonic())

@@ -86,6 +86,8 @@ PREF_DEFAULTS = {
     "cup_ml": None,
     "low_level_pct": 15,         # warn when a bottle drops below this (feature 4)
     "voice_enabled": True,       # accept orders from Levi (feature 14)
+    "last_clean": None,          # set by the self-clean job (unix time)
+    "scale_factor": None,        # set by the setup check when it corrects the scale
 }
 
 

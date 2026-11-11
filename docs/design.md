@@ -46,6 +46,25 @@ bottle, through the top plate, to its pump, then up the drum wall and along the 
 - **Pours by weight.** A load cell under the glass measures what actually went in. Each
   pump runs until its target grams are reached, with a stall detector (no weight change
   for 2 s means an empty bottle). Timed pours drift as tubing wears; weight does not.
+- **Ready until picked up.** After a drink the scale is still zeroed on the cup, so lifting
+  it reads strongly negative. A watcher waits for that, keeps the ring (and the gate) lit in
+  the drink's color until then, and re-zeroes the scale for the next cup. A new pour started
+  meanwhile waits for the stage to clear instead of pouring into the finished drink.
+- **Weight guard.** Over a sliding 0.4 s window, weight rising faster than four times the
+  pump's learned flow (8 g/s before it has learned) stops the pour. So does the cup losing
+  more than 12 g or 30% of what's in it while pouring. After each pump stops, and while a
+  finished drink waits, a steady climb over three seconds means a channel stuck on: all
+  pumps go off and the app says to check the driver board.
+- **Maintenance jobs** (`halo/maintenance.py`) run step by step from the web app, locking
+  out pours. Self-clean: catch cup, soapy pass (30 g per line, lines that barely move are
+  flagged), 60 s soak, two clean-water rinses, air purge, then re-prime once the bottles are
+  back; the catch cup is emptied whenever it would pass 650 g. Setup check: zero, known-weight
+  check with a one-tap correction saved to prefs, a red/green/blue/white light test, then
+  each loaded line primed until 3 g reaches the cup and timed for 3 s.
+- **Library** (`halo/web/library.js`) runs in the browser against TheCocktailDB's free API:
+  searches by each loaded spirit, looks up the drinks, maps ingredients to your bottles
+  through a synonym table, converts oz/cl/ml/tsp/dash/"juice of"/"top" to parts, keeps
+  garnishes and bitters as notes, and drops drinks that need cream, milk or egg.
 - **Pumps learn.** After each ingredient the scale shows how fast the pump ran at full
   speed and how much landed after it stopped. Both are averaged per pump (`pumps.json`)
   and the next pour stops early by the learned amount. Learning resets when a different

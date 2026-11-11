@@ -47,6 +47,7 @@ class MockPumps:
         self.drip_g = drip_g          # liquid still in the tube that lands after the pump stops
         self.running: dict[int, float] = {}
         self.empty_slots: set[int] = set()
+        self.stuck: set[int] = set()  # test helper: a pump whose MOSFET won't switch off
         self.speed_log: list[float] = []
 
     def _update(self):
@@ -58,6 +59,10 @@ class MockPumps:
         self._update()
 
     def off(self, slot: int) -> None:
+        if slot in self.stuck:                       # stuck MOSFET: the pump runs flat out
+            self.running[slot] = 1.0
+            self._update()
+            return
         was = self.running.pop(slot, None)
         self._update()
         if was and self.drip_g and slot not in self.empty_slots:
@@ -117,12 +122,21 @@ class Scale:
 class MockScale:
     def __init__(self):
         self._g = 0.0
-        self.flow = 0.0
+        self._flow = 0.0
         self._t = time.monotonic()
+
+    @property
+    def flow(self) -> float:
+        return self._flow
+
+    @flow.setter
+    def flow(self, value: float) -> None:
+        self._tick()                     # liquid so far landed at the old rate
+        self._flow = value
 
     def _tick(self):
         now = time.monotonic()
-        self._g += self.flow * (now - self._t)
+        self._g += self._flow * (now - self._t)
         self._t = now
 
     def grams(self, samples: int = 3) -> float:
@@ -224,6 +238,12 @@ class HaloBase:
         head = (t * 14) % self.n
         self._show([_scale((210, 225, 255), max(0.05, 1 - ((head - i) % self.n) / 6)) for i in range(self.n)])
 
+    def ready(self, t: float, color):
+        """Feature 3: a finished drink is waiting. Steady glow in the drink's color with a slow
+        shimmer travelling round, clearly different from the waiting breath."""
+        color = tuple(max(60, c) for c in color) if max(color) < 60 else color
+        self._show([_scale(color, 0.55 + 0.25 * math.sin(t * 2.2 - i * 0.5)) for i in range(self.n)])
+
     def flash(self, color):
         self._show([color] * self.n)
 
@@ -265,7 +285,7 @@ class MockHalo(HaloBase):
     # remember which animation ran last (tests and the web app's mock ring use it)
     def __getattribute__(self, name):
         attr = object.__getattribute__(self, name)
-        if name in ("off", "breathe", "progress", "segments", "ambient", "listening", "flash"):
+        if name in ("off", "breathe", "progress", "segments", "ambient", "listening", "flash", "ready"):
             def wrapped(*a, **k):
                 object.__setattr__(self, "last", name)
                 return attr(*a, **k)

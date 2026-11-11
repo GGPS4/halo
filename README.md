@@ -25,6 +25,12 @@ any phone or laptop on the same Wi-Fi. The source is in [`halo/web`](halo/web).
   tubing needs replacing.
 - **Knows when something's wrong.** Won't pour without a cup, pauses if you lift it, stops
   and tells you which bottle ran dry.
+- **Ready until it's picked up.** A finished drink keeps the ring and the gate lit in its
+  color until you lift the cup, and Halo won't start the next drink into a cup that's still
+  sitting there.
+- **Weight guard.** The pump stops if the weight jumps faster than any pump could pour
+  (someone pressing on the cup), if the cup gets lighter mid-pour (tipped or spilled), or if
+  liquid keeps coming after a pump was switched off (a stuck channel on the board).
 - **The light is the progress bar.** The LED ring under the glass, the light strip inside
   the gate (it climbs both sides and meets at the top) and the ring on the round
   touchscreen fill together.
@@ -42,6 +48,16 @@ any phone or laptop on the same Wi-Fi. The source is in [`halo/web`](halo/web).
 - **Ambient mode.** When idle, the ring and the screen drift through your bottles' colors.
 - **Levi voice orders.** `POST /api/voice` with what Levi heard; Halo picks or invents the drink.
 - **Drip tray.** A removable tray with a slotted grille surrounds the glass stage.
+- **Self-clean from the app.** Settings › Clean Halo walks you through it: a catch cup on
+  the stage, all 8 dip tubes in soapy water, then clean water, then air. Halo flushes every
+  line, pump and the nozzle, asks you to empty the catch cup before it overflows, flags any
+  line that didn't flow, and primes the lines again when the bottles are back.
+- **Setup check.** Settings › Run setup check zeroes the scale, checks it against something
+  of known weight (and fixes it in one tap), tests the lights, then primes each bottle's
+  line and times its pump, with a plain fix for anything that fails.
+- **Recipe library.** The Library page finds classic drinks from TheCocktailDB that your
+  bottles can make, converts their measures to parts, and lets you add one as it is or have
+  Claude rework it to pour over ice.
 
 ## The Halo app
 
@@ -54,6 +70,8 @@ app icon). From there you can:
 - pour any drink at single or double size and light, normal or strong
 - ask the bartender for a new drink and save the ones you like
 - start and end party menus
+- find classics your bottles can make in the Library
+- clean Halo and run the setup check
 - see stats: most-poured drinks, usage by bottle, recent pours
 - change ring brightness, ambient mode, drink sizes, low-bottle warnings and voice orders
 - download and import your drink library
@@ -80,12 +98,12 @@ git clone https://github.com/GGPS4/halo.git ~/halo
 cd ~/halo
 ./scripts/install.sh          # packages, SPI on, venv, autostart service
 nano .env                     # ANTHROPIC_API_KEY=sk-ant-...
-python -m halo.calibrate scale
-python -m halo.calibrate prime
 sudo systemctl start halo
 ```
 
-Then open `http://halo.local:8080` on your phone, name the 8 bottles, and pour.
+Then open `http://halo.local:8080` on your phone, name the 8 bottles, and run Settings ›
+Run setup check: it calibrates the scale and primes every line. (`python -m halo.calibrate
+scale` and `prime` still work from the command line.)
 
 ## Develop without the hardware
 
@@ -121,8 +139,8 @@ curl -X POST http://halo.local:8080/api/pour \
 
 ## Safety
 
-Food-grade silicone tubing only; flush with `python -m halo.calibrate clean` after each
-session. Keep the 12 V brick and electronics in the base, away from the drip tray. Drink
+Food-grade silicone tubing only; run Settings › Clean Halo after each session, before
+sugar can dry in the lines. Keep the 12 V brick and electronics in the base, away from the drip tray. Drink
 responsibly.
 
 ## License

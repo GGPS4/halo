@@ -16,7 +16,7 @@ from halo.recipes import Ingredient, Recipe
 @pytest.fixture
 def rig(tmp_path):
     settings = load_settings(tmp_path / "none.toml")
-    settings["pour"].update(stall_seconds=0.6, pour_oz=0.5, cup_ml=80, settle_s=0.2)
+    settings["pour"].update(stall_seconds=0.6, pour_oz=0.5, cup_ml=80, settle_s=0.2, surge_g_s=60)
     inv = Inventory(bottles=[Bottle(slot=i) for i in range(1, 9)], path=tmp_path / "b.json")
     inv.bottles[0] = Bottle(1, "Gin", 40, 0.95, "#cfe3dc")
     inv.bottles[1] = Bottle(2, "Tonic", 0, 1.03, "#d9eef7")
@@ -35,6 +35,16 @@ def gt(**kw):
 
 def place_glass_soon(scale, grams=250, delay=0.2):
     threading.Timer(delay, scale.place, args=(grams,)).start()
+
+
+def lift_cup(scale, engine):
+    """Take the finished drink off the stage and wait for Halo to notice (feature 3)."""
+    scale.place(-1000)
+    for _ in range(50):
+        if not engine.waiting_pickup:
+            return
+        time.sleep(0.05)
+    raise AssertionError("Halo didn't notice the cup was lifted")
 
 
 def test_plan_scales_and_orders_lightest_first(rig):
@@ -218,12 +228,12 @@ def test_pumps_learn_to_stop_early(rig):
     pumps.drip_g = 4.0
     errors = []
     for _ in range(4):
-        scale._g = 0.0
         place_glass_soon(scale, delay=0.05)
         engine.start(gt(), "single")
         p = engine.wait(15)
         assert p.state == State.DONE, p.message
         errors.append(max(abs(r["poured_g"] - r["target_g"]) for r in p.report))
+        lift_cup(scale, engine)
     assert errors[0] > 2.0                       # 1.5 g default lead, 4 g lands: overshoot
     assert errors[-1] < 1.0                      # learned
     gin = engine.learning.entry(1, "Gin")
@@ -243,3 +253,85 @@ def test_learning_resets_for_a_new_bottle_and_flags_worn_tubing(tmp_path):
     inv.bottles[0] = Bottle(1, "Gin", 40, 0.95)
     assert L.service(inv) and "tubing" in L.service(inv)[0]["message"]
     assert PumpLearning(tmp_path / "p.json").entry(1, "Gin")["n"] == 17   # saved to disk
+
+
+def test_ready_glow_until_lifted_and_no_pour_into_a_finished_drink(rig):
+    """Feature 3."""
+    engine, scale, pumps, inv = rig
+    place_glass_soon(scale)
+    engine.start(gt())
+    p = engine.wait(15)
+    assert p.state == State.DONE and p.ready and engine.waiting_pickup
+    scale.place(-1000); scale.place(1000)             # a bump that isn't a pickup... still waiting
+    engine.start(gt(), glass_timeout=0.5)            # finished drink still on the stage
+    p = engine.wait(5)
+    assert p.state == State.ERROR and "still on the halo" in p.message
+    assert engine.waiting_pickup                      # still waiting; nothing was poured into it
+    lift_cup(scale, engine)
+    assert not engine.waiting_pickup
+    assert abs(scale.grams()) < 1                     # stage re-zeroed for the next cup
+    place_glass_soon(scale)
+    engine.start(gt())
+    assert engine.wait(15).state == State.DONE
+
+
+def test_guard_stops_on_a_weight_surge(rig):
+    """Feature 13: something pressing on the cup."""
+    engine, scale, pumps, _ = rig
+    place_glass_soon(scale)
+    engine.start(gt(), "double")
+    while engine.progress.state != State.POURING:
+        time.sleep(0.02)
+    time.sleep(0.3)
+    scale.place(150)
+    p = engine.wait(5)
+    assert p.state == State.ERROR and "faster than Halo can pour" in p.message
+    assert pumps.running == {}
+
+
+def test_guard_stops_when_the_cup_tips(rig):
+    engine, scale, pumps, _ = rig
+    place_glass_soon(scale)
+    engine.start(gt(), "double")
+    while engine.progress.poured_g < 12:
+        time.sleep(0.02)
+    scale.place(-20)
+    p = engine.wait(5)
+    assert p.state == State.ERROR and "tipped" in p.message
+    assert pumps.running == {}
+
+
+def test_guard_catches_a_pump_that_wont_stop(rig):
+    engine, scale, pumps, _ = rig
+    pumps.stuck.add(2)
+    place_glass_soon(scale)
+    engine.start(gt())
+    p = engine.wait(10)
+    pumps.stuck.clear()
+    assert p.state == State.ERROR and "still pouring" in p.message
+    assert pumps.running == {}
+
+
+def test_lifting_a_finished_drink_returns_to_idle(rig):
+    engine, scale, *_ = rig
+    place_glass_soon(scale)
+    engine.start(gt())
+    assert engine.wait(15).ready
+    lift_cup(scale, engine)
+    assert engine.progress.state == State.IDLE and not engine.progress.ready
+
+
+def test_guard_catches_a_slow_leak_after_the_drink(rig):
+    """A pump stuck on at real-world speed (1.6 g/s) only shows once the drink is done."""
+    engine, scale, pumps, _ = rig
+    place_glass_soon(scale)
+    engine.start(gt())
+    assert engine.wait(15).state == State.DONE
+    scale.flow = 1.6                                   # something keeps dribbling in
+    for _ in range(80):
+        if engine.progress.state == State.ERROR:
+            break
+        time.sleep(0.1)
+    scale.flow = 0.0
+    assert engine.progress.state == State.ERROR and "kept coming" in engine.progress.message
+    assert not engine.waiting_pickup

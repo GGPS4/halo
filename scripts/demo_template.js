@@ -20,7 +20,7 @@
 
   function idle() {
     return {state: "idle", drink: "", size: "single", strength: "normal", by: "", step: "", step_index: -1,
-            color: "", fraction: 0, poured_g: 0, target_g: 0, speed: 0, message: "", segments: [], report: []};
+            color: "", fraction: 0, poured_g: 0, target_g: 0, speed: 0, message: "", segments: [], report: [], ready: false};
   }
   class ApiError extends Error {}
   const fail = (msg) => { throw new ApiError(msg); };
@@ -61,7 +61,7 @@
   function state() {
     return {bottles: db.bottles.map(level), recipes: db.recipes.map(recipeJson), party: db.party, prefs: db.prefs,
             low: low(), moods: SEED.moods, strengths: SEED.strengths, sizes: {pour_oz: pourOz(), cup_ml: cupMl()},
-            service: [], status: db.status,
+            service: [], status: db.status, job: jobStatus(),
             ring: null, gate: null, mock: true, demo: true};
   }
 
@@ -82,6 +82,8 @@
   /* ---------------------------------------------------------------- pouring, simulated */
   function startPour(r, size, strength, by) {
     if (!["idle", "done", "error", "cancelled"].includes(db.status.state)) fail("Halo is already pouring");
+    if (job.active) fail(`Halo is busy with ${job.title.toLowerCase()}. Finish or cancel it first.`);
+    if (db.status.ready) fail("Take the finished drink off the halo first");
     const missing = r.ingredients.filter(i => !find(i.bottle)).map(i => i.bottle);
     if (missing.length) fail(`Not loaded: ${missing.join(", ")}`);
     strength = STRENGTH[strength] ? strength : db.prefs.default_strength;
@@ -114,13 +116,13 @@
                       ml: Math.round(s.ml * 10) / 10});
       const b = find(s.bottle); b.remaining_ml = Math.max(0, b.remaining_ml - s.ml); level(b);
       p.done += s.grams; p.got = 0; p.idx++;
-      if (p.idx >= p.steps.length) finish("done", `Enjoy. ${p.r.garnish ? p.r.garnish[0].toUpperCase() + p.r.garnish.slice(1) + " to finish." : ""}`.trim());
+      if (p.idx >= p.steps.length) finish("done", `Ready. ${p.r.garnish ? p.r.garnish[0].toUpperCase() + p.r.garnish.slice(1) + " if you like." : ""}`.trim());
     }
   }
   function finish(state, message) {
     clearInterval(timer);
     Object.assign(db.status, {state, message, speed: 0, step: state === "done" ? "" : db.status.step,
-                              fraction: state === "done" ? 1 : db.status.fraction});
+                              fraction: state === "done" ? 1 : db.status.fraction, ready: state === "done"});
     db.history.push({time: Date.now() / 1000, drink: db.status.drink, size: db.status.size, strength: db.status.strength,
                      by: db.status.by, state, report: clone(db.status.report)});
   }
@@ -149,13 +151,85 @@
             description: `${base.name} built around "${request}". In this demo the drink comes from a simple template; on a real Halo, Claude writes it from your bottles.`};
   }
 
+  /* ---------------------------------------------------------------- cleaning and setup check, simulated */
+  const job = {active: false, kind: "", title: "", state: "idle", prompt: null, step: "", fraction: 0, results: [], message: "",
+               script: [], at: 0, timer: null};
+  const jobStatus = () => ({active: job.active, kind: job.kind, title: job.title, state: job.state, prompt: job.prompt,
+                            step: job.step, fraction: job.fraction, results: clone(job.results), message: job.message});
+  const ask = (title, text, actions = [["next", "Next"]], fields = []) =>
+    ({ask: {title, text, actions: actions.map(([id, label]) => ({id, label})), fields}});
+  const work = (step, ms, then) => ({work: step, ms, then});
+  const SCRIPTS = {
+    clean: () => [
+      ask("Set down a catch cup", "Put a large cup or bowl (about a litre) on the halo to catch the cleaning water. Halo will ask you to empty it when it fills."),
+      ask("Soapy water", "Take the bottles out of the drum. Fill a container with warm water and a few drops of dish soap, and put all 8 dip tubes in it.", [["next", "Start cleaning"]]),
+      ...[1, 2, 3, 4, 5, 6, 7, 8].map(s => work(`Soap through line ${s}`, 500)),
+      work("Letting the soap sit", 1500, () => job.results.push({label: "Soap pass", ok: true, detail: "All 8 lines flowed."})),
+      ask("Clean water", "Move all 8 dip tubes into a container of clean warm water.", [["next", "Rinse"]]),
+      ...[1, 2, 3, 4, 5, 6, 7, 8].map(s => work(`Rinse: line ${s}`, 350)),
+      work("Rinse done", 100, () => job.results.push({label: "Rinse", ok: true, detail: "Each line rinsed 2 times."})),
+      ask("Dry the lines", "Lift the dip tubes out of the water so they hang in the air.", [["next", "Dry"]]),
+      ...[1, 2, 3, 4, 5, 6, 7, 8].map(s => work(`Drying line ${s}`, 250)),
+      work("Dry", 100, () => { job.results.push({label: "Lines dried", ok: true, detail: "Air pushed the water out of every line."}); db.prefs.last_clean = Date.now() / 1000; }),
+      ask("Put the bottles back", "Empty the catch cup and set it back down. Put the bottles back in the drum with their dip tubes, then tap Prime so each line fills up to the nozzle.", [["prime", "Prime the lines"], ["skip", "Skip"]]),
+      ...db.bottles.filter(b => b.name).map(b => work(`Priming ${b.name}`, 300, () => job.results.push({label: `Primed ${b.name}`, ok: true, detail: ""}))),
+    ],
+    setup: () => [
+      ask("Clear the stage", "Take everything off the halo so it can zero the scale."),
+      work("Zeroing", 400, () => job.results.push({label: "Scale zeroed", ok: true, detail: ""})),
+      ask("Check the scale", "Put something with a known weight on the halo, like an unopened 12 oz can of soda (about 383 g for regular, 368 g for diet), type its weight, then tap Weigh.",
+          [["weigh", "Weigh"], ["skip", "Skip"]], [{id: "known_g", label: "Weight (g)", value: 383}]),
+      work("Weighing", 800, (ans) => { const k = +((ans.data || {}).known_g) || 383; job.results.push({label: "Scale", ok: true, detail: `Read ${Math.round(k * 1.004)} g for ${k} g (+0.4%).`}); }),
+      work("Light test", 2400),
+      ask("Lights", "Did the ring under the cup and the light inside the gate both show red, green, blue, then white?", [["yes", "Looks right"], ["no", "Something was off"]]),
+      work("Lights", 100, (ans) => job.results.push({label: "Lights", ok: ans.action === "yes", detail: ans.action === "yes" ? "" : "Check the LED ring's plug on J12, then the strip's DIN wire from the ring's DOUT."})),
+      ask("Pumps", "Put a cup on the halo. Halo will run each loaded bottle until it reaches the cup, then time it."),
+      ...db.bottles.filter(b => b.name).map(b => work(`Priming and timing ${b.name}`, 500, () =>
+        job.results.push({label: `Pump ${b.slot} (${b.name})`, ok: true, detail: `Primed in ${2 + b.slot % 3} s, pours ${88 + (b.slot * 7) % 15} ml/min.`}))),
+    ],
+  };
+  let lastAnswer = {};
+  function jobStep() {
+    if (!job.active) return;
+    if (job.at >= job.script.length) {
+      Object.assign(job, {active: false, state: "done", prompt: null, step: "", fraction: 1,
+                          message: job.kind === "clean" ? "Halo is clean." : job.results.every(r => r.ok) ? "All good." : "Some checks need attention."});
+      return;
+    }
+    const s = job.script[job.at];
+    job.fraction = job.at / job.script.length;
+    if (s.ask) { Object.assign(job, {state: "waiting", prompt: s.ask, step: ""}); return; }
+    Object.assign(job, {state: "running", prompt: null, step: s.work});
+    job.timer = setTimeout(() => { if (s.then) s.then(lastAnswer); job.at++; jobStep(); }, s.ms);
+  }
+  function jobRoute(what, body) {
+    if (what === "start") {
+      if (job.active) fail(`${job.title} is already running`);
+      if (!["idle", "done", "error", "cancelled"].includes(db.status.state) || db.status.ready) fail("Take the finished drink off the halo first.");
+      Object.assign(job, {active: true, kind: body.kind, title: body.kind === "clean" ? "Cleaning" : "Setup check", state: "running",
+                          results: [], message: "", at: 0, script: SCRIPTS[body.kind] ? SCRIPTS[body.kind]() : fail("Unknown job")});
+      jobStep(); return jobStatus();
+    }
+    if (what === "answer") {
+      if (!job.active || job.state !== "waiting") fail("Nothing is waiting for an answer");
+      lastAnswer = body; job.at++; jobStep(); return jobStatus();
+    }
+    if (what === "cancel") {
+      clearTimeout(job.timer);
+      Object.assign(job, {active: false, state: "cancelled", prompt: null, message: "Stopped."}); return jobStatus();
+    }
+    fail("not found");
+  }
+
   /* ---------------------------------------------------------------- routes */
   async function handle(path, opts = {}) {
     await new Promise(r => setTimeout(r, path === "bartender" || path === "party" && opts.method === "POST" ? 900 : 60));
     const m = (opts.method || "GET").toUpperCase(), body = opts.body ? (typeof opts.body === "string" ? JSON.parse(opts.body) : opts.body) : {};
     const [a, b, c] = path.split("/").map(decodeURIComponent);
     if (a === "state") return state();
-    if (a === "status") return db.status;
+    if (a === "status") return {...db.status, job: jobStatus()};
+    if (a === "dev" && b === "lift") { if (db.status.ready) Object.assign(db.status, {...idle()}); return {ok: true}; }
+    if (a === "maintenance") return jobRoute(b, body);
     if (a === "stats") return stats();
     if (a === "pumps" && c === "reset") return {ok: true};
     if (a === "pumps") return db.bottles.map(b => {
