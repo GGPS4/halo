@@ -110,6 +110,14 @@ input[type=color]::-webkit-color-swatch-wrapper{padding:0}input[type=color]::-we
 /* ---------- home: the ring ---------- */
 .stage{display:grid;grid-template-columns:minmax(260px,420px) 1fr;gap:clamp(24px,5vw,64px);align-items:center;margin-bottom:12px}
 @media (max-width:820px){.stage{grid-template-columns:1fr;justify-items:center;text-align:center}}
+.drink.lib{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:start;padding:18px 20px}
+.drink.lib:not(:has(img)){grid-template-columns:1fr}
+.drink.lib img{border-radius:12px;object-fit:cover;background:var(--glass-3)}
+.drink.lib h3{margin:0 0 6px;font:500 22px/1.15 var(--serif)}
+.drink.lib p{margin:0 0 6px}
+.drink.lib .row{flex-wrap:wrap;gap:10px;align-items:center}
+.track{display:block;background:var(--glass-3);border-radius:99px;overflow:hidden}
+.track i{display:block;height:100%;background:var(--halo);border-radius:99px;transition:width .3s}
 #demo-bar{position:sticky;top:0;z-index:50;padding:8px 16px;background:var(--halo);color:#12241d;font-size:14px;text-align:center}
 #demo-bar a{color:inherit;font-weight:600}
 .ring{position:relative;width:100%;max-width:420px;aspect-ratio:1}
@@ -233,6 +241,7 @@ pre{background:var(--glass-3);padding:14px;border-radius:var(--r-sm);overflow:au
   <symbol id="i-party" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m4 20 5-14 9 9z"/><path d="M14 4c1 1 1 2 0 3M19 9c1 0 2 1 2 2M17 3l.5 1.5"/></symbol>
   <symbol id="i-stats" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
   <symbol id="i-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/></symbol>
   <symbol id="i-more" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></symbol>
   <symbol id="i-heart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20s-7.5-4.6-9-9.3C2 7 4.3 4.5 7.2 4.5c2 0 3.3 1.1 4.8 3 1.5-1.9 2.8-3 4.8-3C19.7 4.5 22 7 21 10.7 19.5 15.4 12 20 12 20z"/></symbol>
   <symbol id="i-heart-f" viewBox="0 0 24 24" fill="currentColor"><path d="M12 20s-7.5-4.6-9-9.3C2 7 4.3 4.5 7.2 4.5c2 0 3.3 1.1 4.8 3 1.5-1.9 2.8-3 4.8-3C19.7 4.5 22 7 21 10.7 19.5 15.4 12 20 12 20z"/></symbol>
@@ -254,6 +263,7 @@ pre{background:var(--glass-3);padding:14px;border-radius:var(--r-sm);overflow:au
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="demo.js"></script>
+<script src="library.js"></script>
 <script>
 "use strict";
 /* ------------------------------------------------------------------ state */
@@ -278,12 +288,12 @@ async function act(fn, ok){ try{ const r = await fn(); if(ok) toast(ok); await l
 /* ------------------------------------------------------------------ nav */
 const VIEWS = [
   ["home","Halo","home"],["bottles","Bottles","bottle"],["drinks","Drinks","glass"],
-  ["bartender","Bartender","spark"],["party","Party","party"],["stats","Stats","stats"],["settings","Settings","gear"]];
+  ["bartender","Bartender","spark"],["library","Library","book"],["party","Party","party"],["stats","Stats","stats"],["settings","Settings","gear"]];
 function renderNav(){
   const link = ([id,label,ic]) => `<a class="nav" href="#${id}" ${S.view===id?'aria-current="page"':""}>${icon(ic)}<span>${label}</span></a>`;
   $("#rail-links").innerHTML = VIEWS.map(link).join("");
   const mobile = VIEWS.slice(0,4).map(link).join("") +
-    `<a class="nav" href="#more" ${["party","stats","settings","more"].includes(S.view)?'aria-current="page"':""}>${icon("more")}<span>More</span></a>`;
+    `<a class="nav" href="#more" ${["library","party","stats","settings","more"].includes(S.view)?'aria-current="page"':""}>${icon("more")}<span>More</span></a>`;
   $("#tabbar").innerHTML = mobile;
 }
 window.addEventListener("hashchange", () => { S.view = location.hash.slice(1) || "home"; render(); $("#view").focus({preventScroll:true}); scrollTo(0,0); });
@@ -339,7 +349,9 @@ function viewHome(){
   const low = S.state.low.map(s => bottles()[s-1]);
   const favs = S.state.recipes.filter(r => r.favorite && r.available).slice(0,6);
   const party = S.state.party.active ? S.state.party : null;
-  const core = pouring || st.state==="done" ?
+  const core = st.state==="done" && st.ready ?
+    `<div class="what">Ready</div><div class="muted small">lift the cup to finish</div>` :
+    pouring || st.state==="done" ?
     `<div class="pct">${Math.round(st.fraction*100)}%</div><div class="step" style="color:${esc(st.color||"var(--mist)")}">${esc(st.step || (st.state==="done"?"Done":""))}</div>` :
     `<div class="what">${loaded().length} of 8</div><div class="muted small">bottles loaded</div>`;
   return `
@@ -348,14 +360,17 @@ function viewHome(){
     <div class="stage-copy">
       <h1>${esc(statusLine(st))}</h1>
       <p class="lede">${pouring ? esc(st.message) + (st.strength!=="normal" ? ` (${st.strength})` : "")
-        : st.state==="done" ? esc(st.message) : "Pick a drink below, ask the bartender for something new, or load bottles first."}</p>
+        : st.state==="done" ? esc(st.message) + (st.ready ? " Lift the cup when you take it; the ring stays lit until then." : "")
+        : st.state==="error" ? esc(st.message) : "Pick a drink below, ask the bartender for something new, or load bottles first."}</p>
       <div class="row">
         ${pouring ? `<button class="btn danger" data-act="cancel">Stop pour</button>`
           : `<a class="btn" href="#drinks">Choose a drink</a><a class="btn ghost" href="#bartender">Ask the bartender</a>`}
-        ${pouring && S.state.mock && st.state==="waiting_for_glass" ? `<button class="btn quiet" data-act="mockglass">Place test glass</button>`:""}
+        ${pouring && S.state.mock && st.state==="waiting_for_glass" && !/finished|Take the cup/.test(st.message) ? `<button class="btn quiet" data-act="mockglass">Place test cup</button>`:""}
+        ${S.state.mock && st.ready ? `<button class="btn quiet" data-act="mocklift">Lift the cup</button>`:""}
       </div>
     </div>
   </div>
+  ${S.state.job?.active ? `<div class="notice party"><span style="flex:1">${esc(S.state.job.title)} is running${S.state.job.state==="waiting"?" and waiting for you":""}.</span><button class="btn sm ghost" data-act="job-open">Open</button></div>`:""}
   ${party ? `<div class="notice party"><span>Party menu is on: <b>${esc(party.theme)}</b>. The touchscreen only shows ${party.drinks.length} drinks.</span><a class="btn sm ghost" href="#party">Manage</a></div>`:""}
   ${(S.state.service||[]).map(w => `<div class="notice warn"><span style="flex:1">${esc(w.message)}</span>
       <button class="btn sm ghost" data-act="reset-pump" data-slot="${w.slot}">New tubing fitted</button></div>`).join("")}
@@ -656,6 +671,13 @@ function viewSettings(){
   <div class="set"><div><b>Low bottle warning</b><p>Warn when a bottle drops below this level.</p></div>
     <div class="row"><input type="number" min="5" max="50" style="width:84px" value="${p.low_level_pct}" data-pref="low_level_pct" aria-label="Low level percent"><span class="muted">%</span></div></div>
   <section>
+    <h2>Care</h2>
+    <div class="set"><div><b>Clean Halo</b><p>Flushes every line, pump and the nozzle with soapy water, rinses, then dries the lines. You'll need two containers (soapy and clean water) and a large catch cup. About 10 minutes.${p.last_clean ? ` Last cleaned ${ago(p.last_clean)}.` : " Not cleaned yet."}</p></div>
+      <button class="btn ghost" data-act="job-start" data-kind="clean">Clean Halo</button></div>
+    <div class="set"><div><b>Setup check</b><p>Zeroes the scale, checks it against something of known weight, tests the lights, then primes each bottle's line and times its pump. Run it after setup or when something seems off.</p></div>
+      <button class="btn ghost" data-act="job-start" data-kind="setup">Run setup check</button></div>
+  </section>
+  <section>
     <h2>Your drinks</h2>
     <div class="row"><button class="btn ghost" data-act="export">Download all drinks</button>
       <label class="btn ghost" for="imp">Import drinks</label><input id="imp" type="file" accept="application/json" hidden></div>
@@ -670,6 +692,69 @@ function viewSettings(){
   </section>`;
 }
 
+function ago(t){
+  const d = Date.now()/1000 - t;
+  return d < 3600 ? "just now" : d < 86400 ? `${Math.round(d/3600)} h ago` : `${Math.round(d/86400)} days ago`;
+}
+
+/* ------------------------------------------------------------------ library (feature 4) */
+function viewLibrary(){
+  const L = S.lib;
+  if(!L){ loadLibrary(); return `<h1>Library</h1><div class="thinking"><div class="spin"></div>Looking for classics your bottles can make</div>`; }
+  if(L.loading) return `<h1>Library</h1><div class="thinking"><div class="spin"></div>Checking ${L.done} of ${L.total || "…"} classics</div>`;
+  if(L.error) return `<h1>Library</h1><div class="notice warn"><span style="flex:1">${esc(L.error)}</span><button class="btn sm ghost" data-act="lib-reload">Try again</button></div>`;
+  const can = L.items.filter(d=>d.canPour), near = L.items.filter(d=>!d.canPour);
+  const list = S.libTab === "near" ? near : can;
+  const have = new Set(S.state.recipes.map(r=>r.name.toLowerCase()));
+  const card = d => `<article class="drink lib">
+      ${d.thumb ? `<img src="${esc(d.thumb)}" alt="" loading="lazy" width="72" height="72">` : ""}
+      <div><h3>${esc(d.name)}</h3>
+      <p class="small">${d.ingredients.map(i=>`${i.parts} ${esc(i.bottle)}`).join(", ")}${d.missing.length?`, <span class="missing">needs ${esc(d.missing.join(", "))}</span>`:""}</p>
+      <p class="muted small">${[d.category, d.glass].filter(Boolean).map(esc).join(", ")}${d.garnish.length?`. Garnish: ${esc(d.garnish.join(", "))}`:""}${d.skipped.length?`. Leaves out ${esc(d.skipped.join(", "))}`:""}</p>
+      <div class="row" style="margin-top:10px">
+        ${have.has(d.name.toLowerCase()) ? `<span class="muted small">In your drinks</span>` :
+          d.canPour ? `<button class="btn sm" data-act="lib-add" data-id="${d.id}">Add</button>` : ""}
+        <button class="btn sm ghost" data-act="lib-adapt" data-id="${d.id}" ${S.thinking?"disabled":""}>Adapt with Claude</button>
+        <a class="muted small" href="${esc(d.source)}" target="_blank" rel="noopener">Original</a></div></div></article>`;
+  return `<h1>Library</h1>
+  <p class="lede">Classic drinks your bottles can make, from TheCocktailDB. Add one as it is, or have Claude rework it so it pours over ice and is ready to drink.</p>
+  <div class="chips"><button class="chip" data-act="lib-tab" data-t="can" aria-pressed="${S.libTab!=="near"}">You can pour (${can.length})</button>
+    <button class="chip" data-act="lib-tab" data-t="near" aria-pressed="${S.libTab==="near"}">One bottle short (${near.length})</button></div>
+  ${S.thinking ? `<div class="thinking"><div class="spin"></div>Claude is reworking it for ice</div>` : ""}
+  <div class="cards" style="margin-top:18px">${list.map(card).join("") || `<p class="muted">Nothing here yet. Load more bottles on the Bottles page.</p>`}</div>
+  <p class="muted small" style="margin-top:28px">Recipes from <a href="https://www.thecocktaildb.com" target="_blank" rel="noopener">TheCocktailDB</a>, a free community database. Matches are by ingredient name, so check a drink before you add it.</p>`;
+}
+async function loadLibrary(){
+  S.lib = {loading:true, done:0, total:0, items:[]};
+  try{
+    const items = await HaloLibrary.load(loaded(), (done,total)=>{ S.lib.done=done; S.lib.total=total; if(S.view==="library") render(); });
+    S.lib = {items};
+  }catch(e){ S.lib = {error:"Couldn't reach TheCocktailDB. The library needs an internet connection."}; }
+  if(S.view==="library") render();
+}
+const libRecipe = d => ({name:d.name, description:`${d.category || "Classic"} from TheCocktailDB.`, ingredients:d.ingredients,
+  garnish:d.garnish.join(", "), glass:(d.glass||"").toLowerCase(), color:bottleByName(d.ingredients[0].bottle)?.color || "#c9a46a",
+  created_by:"library", tags:[(d.category||"classic").toLowerCase()]});
+
+/* ------------------------------------------------------------------ cleaning and setup check */
+function jobHTML(){
+  const j = S.state.job || {};
+  const pr = j.prompt;
+  const results = (j.results||[]).map(r=>`<div><span>${r.ok?"✓":"!"} ${esc(r.label)}</span><span class="${r.ok?"muted":"missing"} small">${esc(r.detail)}</span></div>`).join("");
+  const done = ["done","error","cancelled"].includes(j.state);
+  return `<h2>${esc(j.title||"")}</h2>
+    <div class="track" style="height:6px;margin:6px 0 16px"><i style="width:${Math.round((j.fraction||0)*100)}%"></i></div>
+    ${pr ? `<h3 style="margin:0 0 6px">${esc(pr.title)}</h3><p>${esc(pr.text)}</p>
+      ${(pr.fields||[]).map(f=>`<div class="field"><label for="jf-${f.id}">${esc(f.label)}</label><input id="jf-${f.id}" data-field="${f.id}" type="number" value="${esc(f.value)}"></div>`).join("")}
+      <div class="actions">${pr.actions.map((a,i)=>`<button class="btn ${i?"ghost":""}" data-act="job-answer" data-a="${a.id}">${esc(a.label)}</button>`).join("")}</div>`
+     : done ? `<p>${esc(j.message || (j.state==="done" ? "Done." : "Stopped."))}</p>`
+     : `<div class="thinking"><div class="spin"></div>${esc(j.step || "Working")}${j.message?`. ${esc(j.message)}`:""}</div>`}
+    ${results ? `<div class="history" style="margin-top:16px">${results}</div>` : ""}
+    <div class="actions" style="margin-top:18px">${done ? `<button class="btn" data-act="job-close">Close</button>`
+      : `<button class="btn ghost" data-act="job-close">Hide</button><button class="btn danger" data-act="job-cancel">Stop</button>`}</div>`;
+}
+function showJob(){ S.jobOpen = true; S.jobSig = ""; openSheet(jobHTML()); S.jobSig = JSON.stringify(S.state.job); }
+
 function viewMore(){
   return `<h1>More</h1><div class="shelf" style="max-width:480px">${VIEWS.slice(4).map(([id,l,ic])=>`<a class="nav" style="background:var(--glass-2);padding:16px" href="#${id}">${icon(ic)}<span>${l}</span></a>`).join("")}</div>`;
 }
@@ -680,7 +765,7 @@ function render(){
   renderNav();
   const st = S.state.status;
   $("#rail-status").innerHTML = `<b style="color:var(--frost)">${esc(statusLine(st))}</b><br>${loaded().length} bottles loaded${S.state.low.length?`, ${S.state.low.length} low`:""}`;
-  const v = {home:viewHome, bottles:viewBottles, drinks:viewDrinks, bartender:viewBartender, party:viewParty, stats:viewStats, settings:viewSettings, more:viewMore}[S.view] || viewHome;
+  const v = {home:viewHome, bottles:viewBottles, drinks:viewDrinks, bartender:viewBartender, library:viewLibrary, party:viewParty, stats:viewStats, settings:viewSettings, more:viewMore}[S.view] || viewHome;
   const q = document.activeElement?.id === "q" ? document.activeElement.selectionStart : null;
   $("#view").innerHTML = v();
   if(q !== null && $("#q")){ $("#q").focus(); $("#q").setSelectionRange(q,q); }
@@ -713,6 +798,29 @@ document.addEventListener("click", async e => {
     case "close": closeSheet(); break;
     case "cancel": act(()=>api("cancel",{method:"POST"}), "Pour stopped"); break;
     case "mockglass": act(()=>api("dev/glass",{method:"POST"})); break;
+    case "mocklift": act(()=>api("dev/lift",{method:"POST"})); break;
+    case "job-start": {
+      const r = await act(()=>api("maintenance/start",{method:"POST",body:{kind:t.dataset.kind}}));
+      if(r){ S.state.job = r; showJob(); } break; }
+    case "job-open": showJob(); break;
+    case "job-answer": {
+      const data = {}; document.querySelectorAll("#sheet [data-field]").forEach(i => data[i.dataset.field] = i.value);
+      try{ S.state.job = await api("maintenance/answer",{method:"POST",body:{action:t.dataset.a, data}}); $("#sheet").innerHTML = jobHTML(); S.jobSig = JSON.stringify(S.state.job); }
+      catch(err){ toast(err.message, true); } break; }
+    case "job-cancel": S.state.job = await api("maintenance/cancel",{method:"POST"}); break;
+    case "job-close": S.jobOpen = false; closeSheet(); load(); break;
+    case "lib-tab": S.libTab = t.dataset.t; render(); break;
+    case "lib-reload": S.lib = null; render(); break;
+    case "lib-add": {
+      const d = S.lib.items.find(x=>x.id===t.dataset.id);
+      if(d) await act(()=>api("recipes",{method:"POST",body:libRecipe(d)}), `${d.name} added to your drinks`); break; }
+    case "lib-adapt": {
+      const d = S.lib.items.find(x=>x.id===t.dataset.id); if(!d) break;
+      const req = `Rework the classic "${d.name}" so Halo can pour it straight over ice, ready to drink with no shaking. `+
+        `The original: ${d.ingredients.map(i=>`${i.parts} oz ${i.bottle}`).join(", ")}${d.missing.length?`, plus ${d.missing.join(", ")} (not loaded)`:""}. Keep its character and name it after the original.`;
+      S.thinking = true; render();
+      try{ S.result = await api("bartender",{method:"POST",body:{request:req}}); S.lastReq = req; S.thinking = false; location.hash = "bartender"; }
+      catch(err){ S.thinking = false; toast(err.message, true); render(); } break; }
     case "refill": act(()=>api(`bottles/${slot}/refill`,{method:"POST"}), "Marked as refilled"); break;
     case "reset-pump": act(()=>api(`pumps/${slot}/reset`,{method:"POST"}), `Pump ${slot} will learn again from the next pour`); S.pumps=null; break;
     case "slot":
@@ -775,6 +883,12 @@ let lastState = "";
 async function poll(){
   try{
     const st = await api("status");
+    if(S.state && st.job){
+      const sig = JSON.stringify(st.job), was = S.state.job;
+      S.state.job = st.job;
+      if(S.jobOpen && sig !== S.jobSig){ S.jobSig = sig; const f = document.activeElement?.dataset?.field; if(!f) $("#sheet").innerHTML = jobHTML(); }
+      if(!S.jobOpen && was?.active !== st.job.active && S.view==="home") render();
+    }
     if(S.state){
       const changed = st.state !== lastState;
       S.state.status = st;
@@ -790,7 +904,7 @@ async function poll(){
       lastState = st.state;
     }
   }catch(e){}
-  setTimeout(poll, S.state && busy() ? 400 : 2500);
+  setTimeout(poll, S.state && (busy() || S.state.job?.active) ? 400 : 2500);
 }
 S.view = location.hash.slice(1) || "home";
 load().then(poll);
