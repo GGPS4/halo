@@ -2,9 +2,9 @@
   "name": "Halo",
   "short_name": "Halo",
   "description": "Load bottles, build drinks and pour from your Halo cocktail maker.",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#12241d",
   "theme_color": "#12241d",
-  "icons": [{"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}]
+  "icons": [{"src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}]
 }
