@@ -1,30 +1,39 @@
 # Halo — design spec
 
-Halo is an AI cocktail maker built around one idea: the glass sits in the middle of a
-ring of bottles, under a floating light ring that pours the drink and shows its progress.
+Halo is an AI cocktail maker in a sealed "Gate" form: a vertical light ring stands at the
+front like a doorway, the glass sits inside it, and the bottles are hidden in a closed drum
+behind. Matte black with walnut accents.
+
+![Halo Gate render](img/halo-gate.jpg)
 
 ## Form
 
 ```
-                 ┌──── halo ring (Ø190, 8 nozzles converge to a center hub)
-                 │        ┌── round touchscreen on the spine head, tilted 20° forward
-        ╭────────┴───────╮│
-        │   ○  ○  ○      ││  ← spine (hollow, carries the 8 output tubes)
-   ▐█▌  ╰──────┬─────────╯│      ▐█▌  ▐█▌  ▐█▌    bottles (8) on a Ø280 pitch circle
-   ▐█▌         ▼          ▐█▌    ▐█▌  ▐█▌  ▐█▌
- ══▐█▌══════[ glass ]═════▐█▌════════════════════  base Ø380 × 70
-            ═LED halo═
+              ╭── round 5" screen sits on top of the ring, facing the user
+        ╭─────●─────╮  ┌──────────────┐ ← walnut lid (lifts off to swap bottles)
+       ╱   nozzle   ╲  │  bottle drum │
+      │      ▼       │ │  8 bottles   │ ← frosted level window, front-left
+      │   [glass]    │ │  hidden      │
+ ═════╧══[ tray ]════╧═╧══════════════╧═══  walnut top on a black plinth
+ ║   pumps, Pi + driver board in the plinth                  ║
 ```
 
 | Element | Size | Material / finish |
 |---|---|---|
-| Base | Ø380 × 70 mm, 6 mm fillet top edge | PETG/ASA print in 4 sectors, matte black |
-| Bottle ring | 9 slots at 40° on Ø280; front slot left open as the glass doorway, 8 bottles | Bottle pads: walnut-PLA discs Ø92 × 6 |
-| Glass stage | Ø100 × 6 frosted acrylic disc on a 1 kg load cell | Lit from below by a 24-LED ring |
-| Spine | 36 × 40 mm section behind the stage (y 55–95), base top to 430 mm, R10 corners | Matte black |
-| Halo ring | Ø190 OD / Ø166 ID × 14 mm at 260 mm, 3 spokes to the hub | Black ring with a frosted inner light strip |
-| Nozzle hub | Ø36 hub, 8 stainless 3 mm tubes converging to a single point | Stainless + black |
-| Display | 5" round 1080×1080 touch panel in a Ø150 bezel, center ~455 mm up, tilted back 20° | Black bezel |
+| Plinth | 430 × 500 × 61 mm tub, R50 corners, 5 mm walls | PETG/ASA, matte black |
+| Top plate | 430 × 500 × 8 mm, R50 corners, top at 69 mm; Ø152 tray well, 8 tube holes, 2 slots for the ring feet | Walnut (veneer or walnut PLA) |
+| Gate ring | Ø400 OD / Ø340 ID × 40 mm deep, center 209 mm up, feet drop 60 mm into the plinth and take 4 M3 screws | Matte black, frosted acrylic light strip on the inner face |
+| Display | 5" round touch panel in a Ø156 × 16 bezel, on top of the ring (center ~395 mm) | Black bezel, walnut trim ring |
+| Bottle drum | Ø340 × 331 mm, 4 mm wall, centered 190 mm behind the glass | Matte black |
+| Drum lid | Ø344 × 12 mm | Walnut |
+| Level window | 24 × 240 mm slot at 205°, 60 mm above the top | Frosted acrylic |
+| Bottle pads | 8 × Ø84 × 4 on a Ø240 circle inside the drum | Walnut PLA |
+| Nozzle arm | 20 × 26 × 14 bridge from the drum to a Ø36 hub, 252–280 mm up | Black, 8 stainless 3 mm tips |
+| Glass stage | Ø100 × 6 frosted acrylic on a 1 kg load cell | Lit from below by the LED ring |
+| Drip tray | Ø150 / Ø106, 10.5 deep, 1.5 mm flange with a 24-slot grille | Matte black |
+
+The pumps sit under the drum on a Ø240 circle, so each tube runs straight down from its
+bottle, through the top plate, to its pump, then up the drum wall and along the arm.
 
 ## What is new compared with timed-pump cocktail makers
 
@@ -39,8 +48,10 @@ ring of bottles, under a floating light ring that pours the drink and shows its 
   loaded, from a mood ("smoky", "low ABV", "surprise me"), and explains each one.
 - **Levi hook.** `POST /api/voice` takes what Levi heard; `POST /api/ring` lights the ring while it listens.
 - **Strength, bottle levels, party menus, pour colors, soft stop, ambient mode** (see README).
-- **Drip tray.** Ø150 well in the base top around the stage; a removable black tray (Ø150/Ø106,
-  10.5 mm deep) sits on a ledge with 4 × 6×3 mm magnets and has a 24-slot grille flush with the top.
+- **Sealed.** Bottles, tubing, pumps and electronics are all hidden; the only visible
+  parts are the ring, the screen, the glass and the walnut.
+- **Drip tray.** Removable black tray in a Ø152 well, held by 4 × 6×3 mm magnets, with a
+  24-slot grille flush with the walnut top.
 
 ## Electronics
 
@@ -67,6 +78,7 @@ ring of bottles, under a floating light ring that pours the drink and shows its 
 The LED ring is driven over SPI because the PWM-based WS2812 libraries don't run on the
 Pi 5's RP1 chip.
 
-The Fusion model (`cad/build_halo.py`) is the source of truth for these dimensions. Run it in
-Fusion to rebuild the full assembly; standard hardware (M3 screws 91290A115, heat-set inserts
+The Fusion model is the source of truth for these dimensions. `cad/build_gate.py` builds the
+Gate form (Fusion file "Halo Gate Assembly"); `cad/build_halo.py` is the earlier open
+ring-of-bottles version, kept for reference; standard hardware (M3 screws 91290A115, heat-set inserts
 94180A331) comes from McMaster-Carr.

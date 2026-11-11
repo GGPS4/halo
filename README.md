@@ -1,8 +1,11 @@
 # Halo
 
-An AI cocktail maker that pours by weight. Eight bottles stand in a ring, the glass sits in
-the middle on a load cell, and a light ring above it fills up as the drink pours. Claude
-invents drinks from whatever bottles are loaded.
+An AI cocktail maker that pours by weight. It's a sealed "Gate" design in matte black and
+walnut: the glass stands inside an upright light ring that fills as the drink pours, and
+eight bottles are hidden in a closed drum behind it. Claude invents drinks from whatever
+bottles are loaded.
+
+![Halo Gate](docs/img/halo-gate.jpg)
 
 - **Pours by weight, not by timer.** Each pump stops when the scale sees its target grams,
   so pours stay accurate as tubing wears. No seconds-per-ounce calibration.
