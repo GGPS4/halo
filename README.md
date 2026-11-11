@@ -1,8 +1,8 @@
 # Halo
 
 An AI cocktail maker that pours by weight. It's a sealed "Gate" design in matte black and
-walnut: the glass stands inside an upright light ring that fills as the drink pours, and
-eight bottles are hidden in a closed drum behind it. Claude invents drinks from whatever
+walnut: the glass stands inside an upright ring, on a light ring that fills as the drink
+pours, and eight bottles are hidden in a closed drum behind it. Claude invents drinks from whatever
 bottles are loaded.
 
 ![Halo Gate](docs/img/halo-gate.jpg)
