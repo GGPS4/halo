@@ -23,7 +23,7 @@ behind. Matte black with walnut accents.
 | Plinth | 430 × 500 × 61 mm tub, R50 corners, 5 mm walls | PETG/ASA, matte black |
 | Top plate | 430 × 500 × 8 mm, R50 corners, top at 69 mm; Ø152 tray well, 8 tube holes, 2 slots for the ring feet | Walnut (veneer or walnut PLA) |
 | Gate ring | Ø400 OD / Ø340 ID × 40 mm deep, center 209 mm up, feet drop 60 mm into the plinth and take 4 M3 screws | Matte black, frosted acrylic light strip on the inner face |
-| Gate light | 52 WS2812B pixels (60/m strip, ~870 mm) on the visible inner arc, behind the frosted strip, chained after the 24-LED ring | Lights from both feet up to the top as the drink pours |
+| Gate light | 52 WS2812B pixels (60/m strip, ~870 mm) in a 12 × 4 mm channel on the visible inner arc, behind the frosted strip, chained after the 24-LED ring | Lights from both feet up to the top as the drink pours |
 | Display | 5" round touch panel in a Ø156 × 16 bezel, on top of the ring (center ~395 mm) | Black bezel, walnut trim ring |
 | Bottle drum | Ø340 × 331 mm, 4 mm wall, centered 190 mm behind the glass | Matte black |
 | Drum lid | Ø344 × 12 mm | Walnut |

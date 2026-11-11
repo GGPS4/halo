@@ -187,6 +187,8 @@ def make_gate():
     m = mat(0, 0, RING_CZ, rotx=90)                       # built flat, stood up: thickness along Y
     occ, c = new_part("Gate ring", m)
     ring(c, RING_RO, RING_RI, RING_T, z0=-RING_T / 2)
+    # 12 x 4 mm channel in the inner face for the WS2812B strip, covered by the frosted strip
+    ring(c, RING_RI + 4, RING_RI - 1, 12, z0=-6, op=CUT, bodies=[c.bRepBodies.item(0)])
     occ, s = new_part("Gate light strip (frosted acrylic)", m)
     ring(s, RING_RI, RING_RI - 3, 30, z0=-15)
 
