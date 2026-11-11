@@ -7,6 +7,10 @@ bottles are loaded.
 
 ![Halo Gate](docs/img/halo-gate.jpg)
 
+**Web app:** [http://halo.local:8080](http://halo.local:8080). Halo serves it itself, so the link
+opens on any phone or laptop on the same Wi-Fi once Halo is running. The source is in
+[`halo/web`](halo/web).
+
 - **Pours by weight, not by timer.** Each pump stops when the scale sees its target grams,
   so pours stay accurate as tubing wears. No seconds-per-ounce calibration.
 - **Knows when something's wrong.** Won't pour without a glass, pauses if you lift the
@@ -30,7 +34,7 @@ bottles are loaded.
 
 ## The Halo app
 
-Open `http://halo.local:8080` on your phone or laptop (add it to your home screen for an
+Open [http://halo.local:8080](http://halo.local:8080) on your phone or laptop (add it to your home screen for an
 app icon). From there you can:
 
 - set what's in each of the 8 slots on a top-down map of the machine, mark bottles refilled,
