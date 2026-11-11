@@ -6,11 +6,11 @@ ring of bottles, under a floating light ring that pours the drink and shows its 
 ## Form
 
 ```
-                 ┌──── halo ring (Ø200, 8 nozzles converge to a center hub)
+                 ┌──── halo ring (Ø190, 8 nozzles converge to a center hub)
                  │        ┌── round touchscreen on the spine head, tilted 20° forward
         ╭────────┴───────╮│
         │   ○  ○  ○      ││  ← spine (hollow, carries the 8 output tubes)
-   ▐█▌  ╰──────┬─────────╯│      ▐█▌  ▐█▌  ▐█▌    bottles (8) on a Ø300 pitch circle
+   ▐█▌  ╰──────┬─────────╯│      ▐█▌  ▐█▌  ▐█▌    bottles (8) on a Ø280 pitch circle
    ▐█▌         ▼          ▐█▌    ▐█▌  ▐█▌  ▐█▌
  ══▐█▌══════[ glass ]═════▐█▌════════════════════  base Ø380 × 70
             ═LED halo═
