@@ -329,8 +329,8 @@ function ringSVG(status, size=24){
     <g filter="url(#glow)" opacity=".85">${px}</g><g>${px}</g></svg>`;
 }
 function statusLine(st){
-  return {idle:"Ready to pour", waiting_for_glass:"Waiting for a glass", pouring:`Pouring ${st.drink}`,
-          paused:"Paused: glass lifted", done:`${st.drink} is ready`, error:st.message, cancelled:"Pour stopped"}[st.state] || st.message;
+  return {idle:"Ready to pour", waiting_for_glass:"Waiting for a cup of ice", pouring:`Pouring ${st.drink}`,
+          paused:"Paused: cup lifted", done:`${st.drink} is ready`, error:st.message, cancelled:"Pour stopped"}[st.state] || st.message;
 }
 
 /* ------------------------------------------------------------------ views */
@@ -357,6 +357,8 @@ function viewHome(){
     </div>
   </div>
   ${party ? `<div class="notice party"><span>Party menu is on: <b>${esc(party.theme)}</b>. The touchscreen only shows ${party.drinks.length} drinks.</span><a class="btn sm ghost" href="#party">Manage</a></div>`:""}
+  ${(S.state.service||[]).map(w => `<div class="notice warn"><span style="flex:1">${esc(w.message)}</span>
+      <button class="btn sm ghost" data-act="reset-pump" data-slot="${w.slot}">New tubing fitted</button></div>`).join("")}
   ${low.map(b => `<div class="notice warn"><span class="dot" style="background:${esc(b.color)}"></span>
       <span style="flex:1"><b>${esc(b.name)}</b> in slot ${b.slot} is at ${Math.round(b.level*100)}% (${ml(b.remaining_ml)} left)</span>
       <button class="btn sm ghost" data-act="refill" data-slot="${b.slot}">Mark refilled</button></div>`).join("")}
@@ -556,10 +558,10 @@ function pourSheet(name){
     const seg = (key, opts) => `<div class="seg" role="group">${opts.map(([v,l])=>`<button type="button" data-${key}="${v}" aria-pressed="${S.pour[key]===v}">${l}</button>`).join("")}</div>`;
     $("#sheet").innerHTML = `<h2>${esc(r.name)}</h2>${pourBar(r,12)}
       <p class="muted" style="margin:14px 0 18px">${esc(r.description)}</p>
-      <div class="field"><label>Size</label>${seg("size",[["single",`Single, ${S.state.sizes.single} ml`],["double",`Double, ${S.state.sizes.double} ml`]])}</div>
+      <div class="field"><label>Size</label>${seg("size",[["single",`Single, ${r.sizes[S.pour.strength].single} ml`],["double",`Double, ${r.sizes[S.pour.strength].double} ml`]])}</div>
       <div class="field"><label>Strength</label>${seg("strength",[["light","Light"],["normal","Normal"],["strong","Strong"]])}
-        <span class="muted small">Changes how much spirit goes in, not the size of the drink.</span></div>
-      <p class="small">Place a glass on the halo after you press Pour.${r.garnish?` Finish with ${esc(r.garnish)}.`:""}</p>
+        <span class="muted small">Changes how much spirit goes in. The drink stays about the same size.</span></div>
+      <p class="small">Fill a cup with ice and set it on the halo after you press Pour. It's ready to drink when the ring finishes.${r.garnish?` Add ${esc(r.garnish)} if you like.`:""}</p>
       <div class="actions"><button class="btn ghost" data-act="close">Cancel</button>
         <button class="btn" data-act="pour" data-name="${esc(r.name)}">Pour ${S.pour.size}</button></div>`;
   };
@@ -609,9 +611,18 @@ function viewParty(){
   </section>`;
 }
 
+function pumpsSection(){
+  const rows = (S.pumps||[]).filter(p => p.bottle);
+  if(!rows.length) return "";
+  const acc = p => p.avg_error_g==null ? "" : p.avg_error_g < 1 ? "on target" : `within ${p.avg_error_g.toFixed(1)} g`;
+  return `<section><h2>Pumps</h2>
+    <p class="muted small" style="margin-top:-6px">Each pump learns from the scale how fast it runs and how much still lands after it stops, then stops that much early next time.</p>
+    <div class="history">${rows.map(p=>`<div><span><b>${p.slot}</b> ${esc(p.bottle)} <span class="muted small">${p.pours ? `${p.ml_per_min ?? "–"} ml/min, stops ${p.stops_early_g?.toFixed(1)} g early` : "learns on its first pour"}</span></span>
+      <span class="${p.worn?"missing":"muted"} small">${p.worn ? `tubing worn (${Math.round(p.worn*100)}%)` : acc(p)}</span></div>`).join("")}</div></section>`;
+}
 function viewStats(){
   const s = S.stats;
-  if(!s) { api("stats").then(d=>{ S.stats=d; if(S.view==="stats") render(); }); return `<h1>Stats</h1><div class="thinking"><div class="spin"></div>Adding it up</div>`; }
+  if(!s) { Promise.all([api("stats"), api("pumps")]).then(([d,p])=>{ S.stats=d; S.pumps=p; if(S.view==="stats") render(); }); return `<h1>Stats</h1><div class="thinking"><div class="spin"></div>Adding it up</div>`; }
   const max = Math.max(1, ...s.top_drinks.map(d=>d[1])), maxb = Math.max(1, ...s.by_bottle.map(d=>d[1]));
   const when = t => new Date(t*1000).toLocaleString([], {weekday:"short", hour:"numeric", minute:"2-digit"});
   return `<h1>Stats</h1><p class="lede">What Halo has poured since you set it up.</p>
@@ -621,6 +632,7 @@ function viewStats(){
   ${s.pours ? `
   <section><h2>Most poured</h2><div class="bars">${s.top_drinks.map(([n,c])=>`<div class="b"><span>${esc(n)}</span><span class="track"><i style="width:${c/max*100}%"></i></span><span class="muted">${c}</span></div>`).join("")}</div></section>
   <section><h2>By bottle</h2><div class="bars">${s.by_bottle.map(([n,v])=>`<div class="b"><span>${esc(n)}</span><span class="track"><i style="width:${v/maxb*100}%;background:${esc(bottleByName(n)?.color||"var(--halo)")}"></i></span><span class="muted">${v} ml</span></div>`).join("")}</div></section>
+  ${pumpsSection()}
   <section><h2>Recent</h2><div class="history">${s.recent.map(h=>`<div><span>${esc(h.drink)} <span class="muted small">${h.size}${h.strength!=="normal"?", "+h.strength:""}${h.by?", from "+esc(h.by):""}</span></span>
     <span class="${h.state==="done"?"muted":"missing"} small">${h.state==="done"?when(h.time):h.state}</span></div>`).join("")}</div></section>`
   : `<div class="empty"><h3>No pours yet</h3><p>Stats fill in as Halo pours drinks.</p></div>`}`;
@@ -637,9 +649,10 @@ function viewSettings(){
   ${sw("voice_enabled","Voice orders from Levi","Let Levi pour drinks when you ask out loud.")}
   <div class="set"><div><b>Default strength</b><p>Used when an order doesn't say.</p></div>
     <div class="seg">${["light","normal","strong"].map(s=>`<button data-act="pref-set" data-k="default_strength" data-v="${s}" aria-pressed="${p.default_strength===s}">${s[0].toUpperCase()+s.slice(1)}</button>`).join("")}</div></div>
-  <div class="set"><div><b>Drink sizes</b><p>Total liquid in a single and a double, in ounces.</p></div>
-    <div class="row"><input type="number" step="0.25" min="0.5" max="12" style="width:84px" value="${p.single_oz ?? ""}" placeholder="${(S.state.sizes.single/29.57).toFixed(1)}" data-pref="single_oz" aria-label="Single oz">
-      <input type="number" step="0.25" min="0.5" max="12" style="width:84px" value="${p.double_oz ?? ""}" placeholder="${(S.state.sizes.double/29.57).toFixed(1)}" data-pref="double_oz" aria-label="Double oz"></div></div>
+  <div class="set"><div><b>Spirit in a single</b><p>A single carries the alcohol of this much 40% spirit; mixers are added around it. A double is twice this.</p></div>
+    <div class="row"><input type="number" step="0.25" min="0.5" max="4" style="width:84px" value="${p.pour_oz ?? ""}" placeholder="${S.state.sizes.pour_oz}" data-pref="pour_oz" aria-label="Spirit in a single, oz"><span class="muted">oz</span></div></div>
+  <div class="set"><div><b>Cup size</b><p>How much liquid fits in your cup once it's full of ice. Halo never pours more than this.</p></div>
+    <div class="row"><input type="number" step="10" min="60" max="700" style="width:84px" value="${p.cup_ml ?? ""}" placeholder="${S.state.sizes.cup_ml}" data-pref="cup_ml" aria-label="Cup size, ml"><span class="muted">ml</span></div></div>
   <div class="set"><div><b>Low bottle warning</b><p>Warn when a bottle drops below this level.</p></div>
     <div class="row"><input type="number" min="5" max="50" style="width:84px" value="${p.low_level_pct}" data-pref="low_level_pct" aria-label="Low level percent"><span class="muted">%</span></div></div>
   <section>
@@ -701,6 +714,7 @@ document.addEventListener("click", async e => {
     case "cancel": act(()=>api("cancel",{method:"POST"}), "Pour stopped"); break;
     case "mockglass": act(()=>api("dev/glass",{method:"POST"})); break;
     case "refill": act(()=>api(`bottles/${slot}/refill`,{method:"POST"}), "Marked as refilled"); break;
+    case "reset-pump": act(()=>api(`pumps/${slot}/reset`,{method:"POST"}), `Pump ${slot} will learn again from the next pour`); S.pumps=null; break;
     case "slot":
       if(S.swapFrom && S.swapFrom!==slot){ const from=S.swapFrom; S.swapFrom=null;
         await act(()=>api("bottles/swap",{method:"POST",body:{a:from,b:slot}}), `Swapped slots ${from} and ${slot}`); break; }
@@ -730,7 +744,7 @@ document.addEventListener("click", async e => {
     case "fav": act(()=>api(`recipes/${encodeURIComponent(name)}/favorite`,{method:"POST"})); break;
     case "pour-sheet": pourSheet(name); break;
     case "pour": {
-      const ok = await act(()=>api("pour",{method:"POST",body:{drink:name,size:S.pour.size,strength:S.pour.strength,by:"phone"}}), "Place a glass on the halo");
+      const ok = await act(()=>api("pour",{method:"POST",body:{drink:name,size:S.pour.size,strength:S.pour.strength,by:"phone"}}), "Place a cup of ice on the halo");
       if(ok){ closeSheet(); location.hash = "home"; } break; }
     case "ask": case "ask-text": case "ask-again": {
       const req = a==="ask" ? t.dataset.req : a==="ask-again" ? (S.lastReq||"surprise") : ($("#req").value.trim() || "surprise");
