@@ -52,13 +52,14 @@ makerspace or an online cutter (SendCutSend, Ponoko) can cut these.
 1. Glue up the tub, the top plate, the ring, the drum tiers and the lid, each on its own.
 2. Fit the electronics tray, the Pi and the driver board in the tub, with the scale stage
    mounted on the load cell.
-3. Stand the gate ring in the tub: its feet sit on the floor pads, and the 4 floor screws
-   pull it down. Run the LED strip in the channel on the inner edge, and the display cable
-   in the channel on the back to the hole at the top.
-4. Lower the top plate over the ring feet (the slots fit around them) and screw it in
+3. Lower the top plate into the tub (its tabs sit inside the walls) and screw it in
    through the tub walls.
-5. Pin the drum to the plate, route the tubes through the clips and up into the arm, and
-   screw on the arm. Put on the lid.
+4. Pin the drum to the plate, route the tubes through the clips and up into the arm, and
+   screw on the arm.
+5. Stick the LED strip in the channel on the ring's inner edge, drop the ring's feet through
+   the slots in the top plate onto the floor pads, then tip the machine back and drive the 4
+   floor screws up into the feet. The display cable runs up the channel on the back of the
+   ring to the hole at the top. Put on the lid.
 
 The drip tray and the bottle pads sit in place by gravity; nothing holds them.
 
