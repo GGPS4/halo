@@ -77,8 +77,9 @@ app icon). From there you can:
 - download and import your drink library
 
 The full build (parts, wiring, printing, assembly) is in the Halo build guide. Wiring at a
-glance: [`docs/img/wiring.png`](docs/img/wiring.png). The design
-spec is in [`docs/design.md`](docs/design.md) and the driver board in [`pcb/`](pcb/).
+glance: [`docs/img/wiring.png`](docs/img/wiring.png). What to print, in what filament, and how
+the pieces join: [`docs/printing.md`](docs/printing.md). The design spec is in
+[`docs/design.md`](docs/design.md) and the driver board in [`pcb/`](pcb/).
 
 ## Hardware
 
